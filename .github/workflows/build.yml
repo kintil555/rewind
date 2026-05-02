@@ -1,0 +1,82 @@
+name: Build and Release Rewind Mod
+
+on:
+  push:
+    branches: [ main, master ]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: wrapper
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Cache Gradle files
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            .gradle
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Build mod
+        run: ./gradlew build --no-daemon
+        env:
+          GRADLE_OPTS: "-Xmx2G"
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: rewind-mod-jars
+          path: build/libs/*.jar
+          if-no-files-found: error
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            build/libs/*-sources.jar
+            build/libs/*.jar
+          generate_release_notes: true
+          body: |
+            ## Rewind Mod ${{ github.ref_name }}
+
+            Mod Fabric untuk Minecraft 1.21.11 yang memungkinkan kamu memutar balik waktu 5 detik!
+
+            ### Cara Install
+            1. Install [Fabric Loader 0.18.1+](https://fabricmc.net/use/installer/)
+            2. Download [Fabric API untuk 1.21.11](https://modrinth.com/mod/fabric-api)
+            3. Letakkan kedua file `.jar` di folder `mods/`
+
+            ### Cara Pakai
+            - Tekan tombol **`,` (koma)** untuk rewind 5 detik kebelakang
+            - Cooldown 10 detik setelah rewind
+            - Lihat indikator cooldown di HUD (kanan hotbar)
+            - Bekerja di singleplayer **dan** multiplayer!
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
