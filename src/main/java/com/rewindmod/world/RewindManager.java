@@ -8,6 +8,7 @@ import net.minecraft.entity.SpawnReason;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.nbt.NbtList;
+import net.minecraft.inventory.Inventories;
 import net.minecraft.registry.Registries;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
@@ -214,9 +215,9 @@ public class RewindManager {
         player.setExperienceLevel(ps.xpLevel);
         player.setExperiencePoints(0);
         player.addExperience((int)(ps.xpProgress * player.getNextLevelExperience()));
-        // Inventory - readNbt needs RegistryWrapper in 1.21.11
-        NbtList invList = ps.inventoryNbt.getListOrEmpty("inventory");
-        player.getInventory().readNbt(invList);
+        // Inventory - readNbt removed in 1.21.11, use Inventories.readData instead
+        NbtCompound invData = ps.inventoryNbt.getCompoundOrEmpty("inventory");
+        Inventories.readData(invData, player.getInventory().getMainStacks());
         // Velocity
         player.setVelocity(ps.velX, ps.velY, ps.velZ);
         // Fire ticks

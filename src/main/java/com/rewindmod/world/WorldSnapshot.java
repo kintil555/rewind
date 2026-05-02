@@ -1,9 +1,14 @@
 package com.rewindmod.world;
 
+import com.mojang.serialization.DataResult;
 import net.minecraft.entity.Entity;
+import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.inventory.Inventories;
 import net.minecraft.nbt.NbtCompound;
+import net.minecraft.nbt.NbtElement;
 import net.minecraft.nbt.NbtList;
+import net.minecraft.nbt.NbtOps;
 import net.minecraft.registry.Registries;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
@@ -133,17 +138,23 @@ public class WorldSnapshot {
         }
 
         public static PlayerSnapshot capture(ServerPlayerEntity player) {
-            // getEntityWorld() renamed from getWorld() in yarn 1.21.9+
-            NbtList invList = player.getInventory().writeNbt(new NbtList());
+            // Serialize inventory using Inventories helper (writeNbt removed in 1.21.11)
             NbtCompound invNbt = new NbtCompound();
-            invNbt.put("inventory", invList);
+            Inventories.writeData(invNbt, player.getInventory().getMainStacks());
+            NbtCompound invWrapper = new NbtCompound();
+            invWrapper.put("inventory", invNbt);
 
+            // Serialize status effects using CODEC (writeNbt removed in 1.21.11)
             NbtCompound effectsNbt = new NbtCompound();
             NbtList effectList = new NbtList();
             player.getActiveStatusEffects().forEach((effect, instance) -> {
-                NbtCompound effectTag = new NbtCompound();
-                instance.writeNbt(effectTag);
-                effectList.add(effectTag);
+                DataResult<NbtElement> result = StatusEffectInstance.CODEC
+                        .encodeStart(NbtOps.INSTANCE, instance);
+                result.result().ifPresent(tag -> {
+                    if (tag instanceof NbtCompound effectTag) {
+                        effectList.add(effectTag);
+                    }
+                });
             });
             effectsNbt.put("effects", effectList);
 
@@ -158,7 +169,7 @@ public class WorldSnapshot {
                     player.experienceLevel,
                     player.experienceProgress,
                     player.getScore(),
-                    invNbt, effectsNbt,
+                    invWrapper, effectsNbt,
                     player.isOnGround(),
                     player.getVelocity().x, player.getVelocity().y, player.getVelocity().z,
                     player.getFireTicks(),
