@@ -5,6 +5,7 @@ import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.nbt.NbtList;
 import net.minecraft.registry.Registries;
+import net.minecraft.registry.RegistryWrapper;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.util.Identifier;
@@ -133,17 +134,17 @@ public class WorldSnapshot {
         }
 
         public static PlayerSnapshot capture(ServerPlayerEntity player) {
-            // writeNbt(NbtList) — no registries needed in 1.21.11 (API pre-1.21.5)
-            NbtList invList = player.getInventory().writeNbt(new NbtList());
+            // getEntityWorld() renamed from getWorld() in yarn 1.21.9+
+            RegistryWrapper.WrapperLookup registries = ((ServerWorld) player.getEntityWorld()).getRegistryManager();
+            NbtList invList = player.getInventory().writeNbt(new NbtList(), registries);
             NbtCompound invNbt = new NbtCompound();
             invNbt.put("inventory", invList);
 
             NbtCompound effectsNbt = new NbtCompound();
             NbtList effectList = new NbtList();
             player.getActiveStatusEffects().forEach((effect, instance) -> {
-                // In 1.21.6+ StatusEffectInstance.writeNbt(NbtCompound) writes to a compound
                 NbtCompound effectTag = new NbtCompound();
-                instance.writeNbt(effectTag);
+                instance.writeNbt(effectTag, registries);
                 effectList.add(effectTag);
             });
             effectsNbt.put("effects", effectList);
@@ -191,7 +192,8 @@ public class WorldSnapshot {
 
         public static EntitySnapshot capture(Entity entity) {
             NbtCompound nbt = new NbtCompound();
-            entity.saveNbt(nbt);
+            // saveNbt writes entity data to the compound; needs RegistryWrapper in 1.21.11
+            entity.saveNbt(nbt, ((ServerWorld) entity.getEntityWorld()).getRegistryManager());
             // Use registry to get proper entity type ID
             Identifier typeId = Registries.ENTITY_TYPE.getId(entity.getType());
             return new EntitySnapshot(
