@@ -5,6 +5,7 @@ import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.nbt.NbtList;
 import net.minecraft.registry.Registries;
+import net.minecraft.registry.RegistryWrapper;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.util.Identifier;
@@ -133,15 +134,17 @@ public class WorldSnapshot {
         }
 
         public static PlayerSnapshot capture(ServerPlayerEntity player) {
-            // In 1.21.x yarn, writeNbt(NbtList) returns NbtList directly
-            NbtList invList = player.getInventory().writeNbt(new NbtList());
+            // In 1.21.5+, writeNbt requires a RegistryWrapper.WrapperLookup
+            RegistryWrapper.WrapperLookup registries = player.getWorld().getRegistryManager();
+            NbtList invList = player.getInventory().writeNbt(new NbtList(), registries);
             NbtCompound invNbt = new NbtCompound();
             invNbt.put("inventory", invList);
 
             NbtCompound effectsNbt = new NbtCompound();
             NbtList effectList = new NbtList();
             player.getActiveStatusEffects().forEach((effect, instance) -> {
-                NbtCompound effectTag = instance.toNbt();
+                NbtCompound effectTag = new NbtCompound();
+                instance.writeNbt(effectTag, registries);
                 effectList.add(effectTag);
             });
             effectsNbt.put("effects", effectList);
@@ -188,8 +191,7 @@ public class WorldSnapshot {
         }
 
         public static EntitySnapshot capture(Entity entity) {
-            NbtCompound nbt = new NbtCompound();
-            entity.saveSelfNbt(nbt);
+            NbtCompound nbt = entity.writeNbt(new NbtCompound());
             // Use registry to get proper entity type ID
             Identifier typeId = Registries.ENTITY_TYPE.getId(entity.getType());
             return new EntitySnapshot(
