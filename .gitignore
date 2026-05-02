@@ -1,0 +1,28 @@
+# Gradle
+.gradle/
+build/
+out/
+
+# Eclipse
+.classpath
+.eclipse
+.project
+.settings/
+
+# IDEA
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# VSCode
+.vscode/
+
+# macOS
+.DS_Store
+
+# Fabric loom cache
+.loom-cache/
+
+# Run configs
+run/
