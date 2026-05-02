@@ -1,0 +1,12 @@
+{
+  "required": true,
+  "package": "com.rewindmod.mixin.client",
+  "compatibilityLevel": "JAVA_21",
+  "client": [
+    "GameRendererMixin",
+    "InGameHudMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

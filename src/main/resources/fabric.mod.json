@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "id": "rewindmod",
+  "version": "${version}",
+  "name": "Rewind",
+  "description": "Rewind the world 5 seconds back in time! Press < to rewind. Works in multiplayer too.",
+  "authors": [
+    "RewindMod"
+  ],
+  "contact": {
+    "homepage": "https://github.com/rewindmod/rewind-mod",
+    "sources": "https://github.com/rewindmod/rewind-mod"
+  },
+  "license": "MIT",
+  "icon": "assets/rewindmod/icon.png",
+  "environment": "*",
+  "entrypoints": {
+    "main": [
+      "com.rewindmod.RewindMod"
+    ],
+    "client": [
+      "com.rewindmod.client.RewindModClient"
+    ]
+  },
+  "mixins": [
+    "rewindmod.mixins.json",
+    {
+      "config": "rewindmod.client.mixins.json",
+      "environment": "client"
+    }
+  ],
+  "depends": {
+    "fabricloader": ">=0.15.0",
+    "minecraft": "~1.21.11",
+    "java": ">=21",
+    "fabric-api": "*"
+  }
+}
