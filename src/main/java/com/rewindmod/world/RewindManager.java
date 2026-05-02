@@ -9,7 +9,6 @@ import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.nbt.NbtList;
 import net.minecraft.registry.Registries;
-import net.minecraft.registry.RegistryWrapper;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
@@ -149,7 +148,7 @@ public class RewindManager {
         }
         // Also restore players in other dimensions
         for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
-            if (!(player.getWorld() instanceof ServerWorld playerWorld) || playerWorld != world) {
+            if (!(player.getEntityWorld() instanceof ServerWorld playerWorld) || playerWorld != world) {
                 WorldSnapshot.PlayerSnapshot ps = playerSnaps.get(player.getUuid());
                 if (ps != null) {
                     restorePlayer(player, ps);
@@ -198,8 +197,8 @@ public class RewindManager {
     }
 
     private void restorePlayer(ServerPlayerEntity player, WorldSnapshot.PlayerSnapshot ps) {
-        // Teleport - use getWorld() cast to ServerWorld
-        ServerWorld playerWorld = (ServerWorld) player.getWorld();
+        // Teleport - use getEntityWorld() cast to ServerWorld (renamed in 1.21.9)
+        ServerWorld playerWorld = (ServerWorld) player.getEntityWorld();
         player.teleport(
                 playerWorld,
                 ps.x, ps.y, ps.z,
@@ -215,10 +214,10 @@ public class RewindManager {
         player.setExperienceLevel(ps.xpLevel);
         player.setExperiencePoints(0);
         player.addExperience((int)(ps.xpProgress * player.getNextLevelExperience()));
-        // Inventory - in 1.21.5+ getList no longer takes type arg, use getListOrEmpty
-        RegistryWrapper.WrapperLookup registries = playerWorld.getRegistryManager();
+        // Inventory - readNbt(NbtList) without registries in 1.21.11
+        // getList in 1.21.5+ only takes key (no type arg), use getListOrEmpty
         NbtList invList = ps.inventoryNbt.getListOrEmpty("inventory");
-        player.getInventory().readNbt(invList, registries);
+        player.getInventory().readNbt(invList);
         // Velocity
         player.setVelocity(ps.velX, ps.velY, ps.velZ);
         // Fire ticks
@@ -243,7 +242,7 @@ public class RewindManager {
             if (entity == null) return;
 
             entity.setUuid(es.uuid);
-            entity.readNbt(es.fullNbt, world.getRegistryManager());
+            entity.readNbt(es.fullNbt);
             entity.refreshPositionAndAngles(es.x, es.y, es.z, es.yaw, es.pitch);
             world.spawnEntity(entity);
         } catch (Exception e) {
