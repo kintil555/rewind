@@ -4,8 +4,10 @@ import com.rewindmod.RewindMod;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityType;
 import net.minecraft.entity.LivingEntity;
+import net.minecraft.entity.SpawnReason;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.nbt.NbtCompound;
+import net.minecraft.nbt.NbtList;
 import net.minecraft.registry.Registries;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
@@ -16,9 +18,7 @@ import net.minecraft.util.Identifier;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.World;
 
-import java.util.*;
-
-/**
+import java.util.*;/**
  * Core server-side manager for the Rewind mechanic.
  *
  * Responsibilities:
@@ -148,7 +148,7 @@ public class RewindManager {
         }
         // Also restore players in other dimensions
         for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
-            if (player.getWorld() != world) {
+            if (player.getServerWorld() != world) {
                 WorldSnapshot.PlayerSnapshot ps = playerSnaps.get(player.getUuid());
                 if (ps != null) {
                     restorePlayer(player, ps);
@@ -171,13 +171,12 @@ public class RewindManager {
             Entity existing = currentEntities.get(es.uuid);
             if (existing != null) {
                 // Restore position & state
-                existing.setPosition(es.x, es.y, es.z);
-                existing.setRotation(es.yaw, es.pitch);
+                existing.refreshPositionAndAngles(es.x, es.y, es.z, es.yaw, es.pitch);
                 existing.setVelocity(new Vec3d(es.velX, es.velY, es.velZ));
                 // Restore full NBT (health, etc.) for living entities
                 if (existing instanceof LivingEntity living) {
                     NbtCompound nbt = es.fullNbt.copy();
-                    // Only restore health, effects – don't fully reload as it can cause issues
+                    // Only restore health from NBT
                     if (nbt.contains("Health")) {
                         living.setHealth(nbt.getFloat("Health"));
                     }
@@ -200,7 +199,7 @@ public class RewindManager {
     private void restorePlayer(ServerPlayerEntity player, WorldSnapshot.PlayerSnapshot ps) {
         // Teleport
         player.teleport(
-                (net.minecraft.server.world.ServerWorld) player.getWorld(),
+                player.getServerWorld(),
                 ps.x, ps.y, ps.z,
                 Set.of(),
                 ps.yaw, ps.pitch,
@@ -214,10 +213,9 @@ public class RewindManager {
         player.setExperienceLevel(ps.xpLevel);
         player.setExperiencePoints(0);
         player.addExperience((int)(ps.xpProgress * player.getNextLevelExperience()));
-        // Inventory
-        player.getInventory().readNbt(ps.inventoryNbt.getList("inventory", 10) != null
-                ? (net.minecraft.nbt.NbtList) ps.inventoryNbt.get("inventory")
-                : new net.minecraft.nbt.NbtList());
+        // Inventory - readNbt takes NbtList directly in 1.21.x
+        NbtList invList = ps.inventoryNbt.getList("inventory", net.minecraft.nbt.NbtElement.COMPOUND_TYPE);
+        player.getInventory().readNbt(invList);
         // Velocity
         player.setVelocity(ps.velX, ps.velY, ps.velZ);
         // Fire ticks
@@ -232,16 +230,18 @@ public class RewindManager {
     private void spawnEntityFromSnapshot(WorldSnapshot.EntitySnapshot es, ServerWorld world) {
         try {
             Identifier typeId = Identifier.of(es.entityType);
-            Optional<EntityType<?>> typeOpt = Registries.ENTITY_TYPE.getOrEmpty(typeId);
-            if (typeOpt.isEmpty()) return;
+            // In 1.21.x, use Registries.ENTITY_TYPE.getOptionalValue or containsId
+            if (!Registries.ENTITY_TYPE.containsId(typeId)) return;
+            EntityType<?> type = Registries.ENTITY_TYPE.get(typeId);
+            if (type == null) return;
 
-            Entity entity = typeOpt.get().create(world);
+            // EntityType.create(World, SpawnReason) is the correct signature in 1.21.x
+            Entity entity = type.create(world, net.minecraft.entity.SpawnReason.LOAD);
             if (entity == null) return;
 
             entity.setUuid(es.uuid);
             entity.readNbt(es.fullNbt);
-            entity.setPosition(es.x, es.y, es.z);
-            entity.setRotation(es.yaw, es.pitch);
+            entity.refreshPositionAndAngles(es.x, es.y, es.z, es.yaw, es.pitch);
             world.spawnEntity(entity);
         } catch (Exception e) {
             RewindMod.LOGGER.warn("Failed to re-spawn entity {} during rewind: {}", es.uuid, e.getMessage());

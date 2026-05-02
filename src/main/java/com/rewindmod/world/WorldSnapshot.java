@@ -4,8 +4,10 @@ import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.nbt.NbtList;
+import net.minecraft.registry.Registries;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
+import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
 
@@ -131,14 +133,15 @@ public class WorldSnapshot {
         }
 
         public static PlayerSnapshot capture(ServerPlayerEntity player) {
+            // In 1.21.x yarn, writeNbt(NbtList) returns NbtList directly
+            NbtList invList = player.getInventory().writeNbt(new NbtList());
             NbtCompound invNbt = new NbtCompound();
-            player.getInventory().writeNbt(invNbt);
+            invNbt.put("inventory", invList);
 
             NbtCompound effectsNbt = new NbtCompound();
             NbtList effectList = new NbtList();
             player.getActiveStatusEffects().forEach((effect, instance) -> {
-                NbtCompound effectTag = new NbtCompound();
-                instance.writeNbt(effectTag);
+                NbtCompound effectTag = instance.toNbt();
                 effectList.add(effectTag);
             });
             effectsNbt.put("effects", effectList);
@@ -186,10 +189,12 @@ public class WorldSnapshot {
 
         public static EntitySnapshot capture(Entity entity) {
             NbtCompound nbt = new NbtCompound();
-            entity.saveNbt(nbt);
+            entity.saveSelfNbt(nbt);
+            // Use registry to get proper entity type ID
+            Identifier typeId = Registries.ENTITY_TYPE.getId(entity.getType());
             return new EntitySnapshot(
                     entity.getUuid(),
-                    entity.getType().getUntranslatedName(),
+                    typeId.toString(),
                     entity.getX(), entity.getY(), entity.getZ(),
                     entity.getYaw(), entity.getPitch(),
                     entity.getVelocity().x, entity.getVelocity().y, entity.getVelocity().z,
