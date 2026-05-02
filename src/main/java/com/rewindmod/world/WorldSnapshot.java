@@ -5,7 +5,6 @@ import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.nbt.NbtList;
 import net.minecraft.registry.Registries;
-import net.minecraft.registry.RegistryWrapper;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.util.Identifier;
@@ -135,8 +134,7 @@ public class WorldSnapshot {
 
         public static PlayerSnapshot capture(ServerPlayerEntity player) {
             // getEntityWorld() renamed from getWorld() in yarn 1.21.9+
-            RegistryWrapper.WrapperLookup registries = ((ServerWorld) player.getEntityWorld()).getRegistryManager();
-            NbtList invList = player.getInventory().writeNbt(new NbtList(), registries);
+            NbtList invList = player.getInventory().writeNbt(new NbtList());
             NbtCompound invNbt = new NbtCompound();
             invNbt.put("inventory", invList);
 
@@ -144,7 +142,7 @@ public class WorldSnapshot {
             NbtList effectList = new NbtList();
             player.getActiveStatusEffects().forEach((effect, instance) -> {
                 NbtCompound effectTag = new NbtCompound();
-                instance.writeNbt(effectTag, registries);
+                instance.writeNbt(effectTag);
                 effectList.add(effectTag);
             });
             effectsNbt.put("effects", effectList);
@@ -193,7 +191,7 @@ public class WorldSnapshot {
         public static EntitySnapshot capture(Entity entity) {
             NbtCompound nbt = new NbtCompound();
             // saveNbt writes entity data to the compound; needs RegistryWrapper in 1.21.11
-            entity.saveNbt(nbt, ((ServerWorld) entity.getEntityWorld()).getRegistryManager());
+            entity.saveNbt(nbt);
             // Use registry to get proper entity type ID
             Identifier typeId = Registries.ENTITY_TYPE.getId(entity.getType());
             return new EntitySnapshot(
