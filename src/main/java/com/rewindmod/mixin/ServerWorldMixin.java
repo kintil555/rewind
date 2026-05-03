@@ -20,7 +20,7 @@ public abstract class ServerWorldMixin {
 
     @Shadow @Final private MinecraftServer server;
 
-    @Inject(method = "tick", at = @At("TAIL"))
+    @Inject(method = "tick(Ljava/util/function/BooleanSupplier;)V", at = @At("TAIL"))
     private void rewindmod$onTick(BooleanSupplier shouldKeepTicking, CallbackInfo ci) {
         RewindManager.getInstance().onServerTick(server);
     }
