@@ -12,7 +12,9 @@ import net.minecraft.nbt.NbtOps;
 import net.minecraft.registry.Registries;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
+import net.minecraft.inventory.StackWithSlot;
 import net.minecraft.storage.NbtWriteView;
+import net.minecraft.storage.WriteView;
 import net.minecraft.util.ErrorReporter;
 import net.minecraft.util.Identifier;
 import net.minecraft.world.World;
@@ -112,9 +114,10 @@ public class WorldSnapshot {
 
         public static PlayerSnapshot capture(ServerPlayerEntity player) {
             // --- Inventory: store each slot manually using NbtWriteView ---
-            // PlayerInventory.writeData(WriteView) needs a WriteView; we use NbtWriteView.
+            // PlayerInventory.writeData(WriteView.ListAppender<StackWithSlot>) requires a ListAppender.
             NbtWriteView invView = NbtWriteView.create(ErrorReporter.EMPTY);
-            player.getInventory().writeData(invView);
+            WriteView.ListAppender<StackWithSlot> invAppender = invView.getListAppender("inventory", StackWithSlot.CODEC);
+            player.getInventory().writeData(invAppender);
             NbtCompound invWrapper = new NbtCompound();
             invWrapper.put("inventory", invView.getNbt());
 
@@ -171,16 +174,16 @@ public class WorldSnapshot {
         }
 
         public static EntitySnapshot capture(Entity entity) {
-            // entity.writeFullData(WriteView) is the public 1.21.11 API for full entity serialisation
-            NbtWriteView view = NbtWriteView.create(ErrorReporter.EMPTY);
-            entity.writeFullData(view);
+            // entity.saveNbt(NbtCompound) is the correct API for full entity serialisation
+            NbtCompound entityNbt = new NbtCompound();
+            entity.saveNbt(entityNbt);
             Identifier typeId = Registries.ENTITY_TYPE.getId(entity.getType());
             return new EntitySnapshot(
                     entity.getUuid(), typeId.toString(),
                     entity.getX(), entity.getY(), entity.getZ(),
                     entity.getYaw(), entity.getPitch(),
                     entity.getVelocity().x, entity.getVelocity().y, entity.getVelocity().z,
-                    view.getNbt()
+                    entityNbt
             );
         }
     }
