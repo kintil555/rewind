@@ -176,7 +176,8 @@ public class WorldSnapshot {
         public static EntitySnapshot capture(Entity entity) {
             // In 1.21.11, saveNbt was removed. Use writeNbt to get custom entity data.
             // We store the entity type ID separately in the entityType field.
-            NbtCompound entityNbt = entity.writeNbt(new NbtCompound());
+            NbtCompound entityNbt = new NbtCompound();
+            entity.saveNbt(entityNbt);
             Identifier typeId = Registries.ENTITY_TYPE.getId(entity.getType());
             return new EntitySnapshot(
                     entity.getUuid(), typeId.toString(),
