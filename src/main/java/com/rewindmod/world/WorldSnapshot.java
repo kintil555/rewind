@@ -143,12 +143,14 @@ public class WorldSnapshot {
         }
 
         public static PlayerSnapshot capture(ServerPlayerEntity player) {
-            // Capture inventory directly via PlayerInventory — avoids writeCustomDataToNbt API changes
-            NbtList inventoryNbt = new NbtList();
-            player.getInventory().writeNbt(inventoryNbt);
-            // Store inventory NBT inside a compound for compatibility with readCustomDataFromNbt replacement
+            // Capture inventory using Inventories helper — works in MC 1.21.x with registries
+            net.minecraft.registry.RegistryWrapper.WrapperLookup registries =
+                    player.getServer().getRegistryManager();
             NbtCompound fullNbt = new NbtCompound();
-            fullNbt.put("Inventory", inventoryNbt);
+            try {
+                net.minecraft.inventory.Inventories.writeNbt(fullNbt, player.getInventory().main, registries);
+                fullNbt.putInt("SelectedSlot", player.getInventory().selectedSlot);
+            } catch (Exception ignored) {}
 
             return new PlayerSnapshot(
                     player.getUuid(), player.getName().getString(),
@@ -203,8 +205,8 @@ public class WorldSnapshot {
             NbtCompound entityNbt = new NbtCompound();
             boolean alive = true;
             try {
-                // Use saveNbt which writes entity data — available in 1.21.x yarn
-                entity.saveNbt(entityNbt);
+                // writeCustomDataToNbt writes entity-specific data fields
+                entity.writeCustomDataToNbt(entityNbt);
             } catch (Exception ignored) {}
 
             if (entity instanceof LivingEntity living) {
