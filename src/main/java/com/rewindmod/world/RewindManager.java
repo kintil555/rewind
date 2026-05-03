@@ -255,8 +255,17 @@ public class RewindManager {
         try {
             player.getInventory().clear();
             net.minecraft.registry.RegistryWrapper.WrapperLookup registries =
-                    player.getServer().getRegistryManager();
-            net.minecraft.inventory.Inventories.readNbt(ps.fullPlayerNbt, player.getInventory().main, registries);
+                    player.server.getRegistryManager();
+            NbtList inventoryNbt = (NbtList) ps.fullPlayerNbt.get("Inventory");
+            if (inventoryNbt != null) {
+                for (net.minecraft.nbt.NbtElement elem : inventoryNbt) {
+                    net.minecraft.nbt.NbtCompound slotNbt = (net.minecraft.nbt.NbtCompound) elem;
+                    int slot = slotNbt.getInt("Slot");
+                    net.minecraft.nbt.NbtCompound itemNbt = slotNbt.getCompound("Item");
+                    net.minecraft.item.ItemStack.fromNbt(registries, itemNbt)
+                            .ifPresent(stack -> player.getInventory().setStack(slot, stack));
+                }
+            }
         } catch (Exception e) {
             RewindMod.LOGGER.warn("[RewindMod] Failed to restore inventory for {}: {}",
                     player.getName().getString(), e.getMessage());

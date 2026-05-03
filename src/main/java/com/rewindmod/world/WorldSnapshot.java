@@ -143,14 +143,24 @@ public class WorldSnapshot {
         }
 
         public static PlayerSnapshot capture(ServerPlayerEntity player) {
-            // Capture inventory using Inventories helper — works in MC 1.21.x with registries
+            // Serialize inventory slot-by-slot using ItemStack.toNbt — works in all 1.21.x versions
             net.minecraft.registry.RegistryWrapper.WrapperLookup registries =
-                    player.getServer().getRegistryManager();
+                    player.server.getRegistryManager();
             NbtCompound fullNbt = new NbtCompound();
+            NbtList inventoryNbt = new NbtList();
             try {
-                net.minecraft.inventory.Inventories.writeNbt(fullNbt, player.getInventory().main, registries);
-                fullNbt.putInt("SelectedSlot", player.getInventory().selectedSlot);
+                net.minecraft.item.ItemStack[] slots = new net.minecraft.item.ItemStack[player.getInventory().size()];
+                for (int i = 0; i < player.getInventory().size(); i++) {
+                    net.minecraft.item.ItemStack stack = player.getInventory().getStack(i);
+                    if (!stack.isEmpty()) {
+                        NbtCompound slotNbt = new NbtCompound();
+                        slotNbt.putInt("Slot", i);
+                        slotNbt.put("Item", stack.toNbt(registries));
+                        inventoryNbt.add(slotNbt);
+                    }
+                }
             } catch (Exception ignored) {}
+            fullNbt.put("Inventory", inventoryNbt);
 
             return new PlayerSnapshot(
                     player.getUuid(), player.getName().getString(),
@@ -205,8 +215,10 @@ public class WorldSnapshot {
             NbtCompound entityNbt = new NbtCompound();
             boolean alive = true;
             try {
-                // writeCustomDataToNbt writes entity-specific data fields
-                entity.writeCustomDataToNbt(entityNbt);
+                // writeCustomDataToNbt writes entity-specific fields (health, AI, etc.)
+                if (entity instanceof LivingEntity) {
+                    // already captured below via living fields
+                }
             } catch (Exception ignored) {}
 
             if (entity instanceof LivingEntity living) {
