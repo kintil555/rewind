@@ -103,8 +103,8 @@ public class WorldSnapshot {
         public final int xpLevel;
         public final float xpProgress;
         public final int score;
-        // Full NBT — includes inventory, effects, etc. (replaces old per-field approach)
-        public final NbtCompound fullPlayerNbt;
+        // Inventory stored as NbtList for direct restore (fixes item-drop ghost bug)
+        public final NbtList inventoryNbt;
         public final boolean onGround;
         public final double velX, velY, velZ;
         public final int fireTicks;
@@ -121,7 +121,7 @@ public class WorldSnapshot {
                                float yaw, float pitch, float bodyYaw, float headYaw,
                                float health, int foodLevel, float saturation,
                                int xpLevel, float xpProgress, int score,
-                               NbtCompound fullPlayerNbt,
+                               NbtList inventoryNbt,
                                boolean onGround,
                                double velX, double velY, double velZ,
                                int fireTicks, int air,
@@ -133,7 +133,7 @@ public class WorldSnapshot {
             this.bodyYaw = bodyYaw; this.headYaw = headYaw;
             this.health = health; this.foodLevel = foodLevel; this.saturation = saturation;
             this.xpLevel = xpLevel; this.xpProgress = xpProgress; this.score = score;
-            this.fullPlayerNbt = fullPlayerNbt;
+            this.inventoryNbt = inventoryNbt;
             this.onGround = onGround;
             this.velX = velX; this.velY = velY; this.velZ = velZ;
             this.fireTicks = fireTicks; this.air = air;
@@ -142,9 +142,8 @@ public class WorldSnapshot {
         }
 
         public static PlayerSnapshot capture(ServerPlayerEntity player) {
-            // Full player NBT — contains Inventory list, ActiveEffects, etc.
-            NbtCompound fullNbt = new NbtCompound();
-            player.saveSelfNbt(fullNbt);
+            // Capture inventory directly as NbtList — most reliable approach
+            NbtList inventoryNbt = player.getInventory().writeNbt(new NbtList());
 
             return new PlayerSnapshot(
                     player.getUuid(), player.getName().getString(),
@@ -155,7 +154,7 @@ public class WorldSnapshot {
                     player.getHungerManager().getFoodLevel(),
                     player.getHungerManager().getSaturationLevel(),
                     player.experienceLevel, player.experienceProgress, player.getScore(),
-                    fullNbt,
+                    inventoryNbt,
                     player.isOnGround(),
                     player.getVelocity().x, player.getVelocity().y, player.getVelocity().z,
                     player.getFireTicks(), player.getAir(),
@@ -199,7 +198,7 @@ public class WorldSnapshot {
             NbtCompound entityNbt = new NbtCompound();
             boolean alive = true;
             try {
-                entity.saveSelfNbt(entityNbt);
+                entity.saveNbt(entityNbt); // saveNbt = boolean, populates compound
             } catch (Exception ignored) {}
 
             if (entity instanceof LivingEntity living) {
