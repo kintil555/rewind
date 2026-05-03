@@ -54,7 +54,7 @@ public class RewindConfigScreen extends Screen {
                     if (!RewindCooldownTracker.getInstance().isOnCooldown()) {
                         RewindCooldownTracker.getInstance().triggerLocalCooldown();
                         ClientPlayNetworking.send(
-                                new RewindServerNetworking.RewindRequestDurationPayload(selectedSeconds));
+                                new RewindServerNetworking.RewindRequestDurationPayload(slider.getSelectedSeconds()));
                     }
                     this.close();
                 })
@@ -99,11 +99,12 @@ public class RewindConfigScreen extends Screen {
                 this.width / 2, panelY + 26, 0xFFFFFF);
 
         // ── Slider label ─────────────────────────────────────────────────────
-        String durationLabel = "Durasi: " + selectedSeconds + " detik";
-        if (selectedSeconds == MAX_SECONDS) durationLabel += " (MAKS)";
+        int currentSecs = slider != null ? slider.getSelectedSeconds() : selectedSeconds;
+        String durationLabel = "Durasi: " + currentSecs + " detik";
+        if (currentSecs == MAX_SECONDS) durationLabel += " (MAKS)";
         context.drawCenteredTextWithShadow(this.textRenderer,
                 Text.literal(durationLabel).formatted(
-                        selectedSeconds >= 10 ? Formatting.YELLOW : Formatting.WHITE),
+                        currentSecs >= 10 ? Formatting.YELLOW : Formatting.WHITE),
                 this.width / 2, panelY + 42, 0xFFFFFF);
 
         // ── Render widgets ────────────────────────────────────────────────────
@@ -138,30 +139,34 @@ public class RewindConfigScreen extends Screen {
 
     // ── Custom slider ─────────────────────────────────────────────────────────
 
-    private class RewindDurationSlider extends SliderWidget {
+    private static class RewindDurationSlider extends SliderWidget {
+
+        private int selectedSeconds;
 
         public RewindDurationSlider(int x, int y, int width, int height, int initialSeconds) {
             super(x, y, width, height,
                     Text.empty(),
                     (initialSeconds - MIN_SECONDS) / (double)(MAX_SECONDS - MIN_SECONDS));
+            this.selectedSeconds = initialSeconds;
             updateMessage();
+        }
+
+        public int getSelectedSeconds() {
+            return MIN_SECONDS + (int) Math.round(this.value * (MAX_SECONDS - MIN_SECONDS));
         }
 
         @Override
         protected void updateMessage() {
             int secs = getSelectedSeconds();
-            String label = secs + (secs == 1 ? " detik" : " detik");
+            this.selectedSeconds = secs;
+            String label = secs + " detik";
             this.setMessage(Text.literal("◀ " + label + " ▶").formatted(
                     secs >= 10 ? Formatting.YELLOW : Formatting.AQUA));
         }
 
         @Override
         protected void applyValue() {
-            selectedSeconds = getSelectedSeconds();
-        }
-
-        private int getSelectedSeconds() {
-            return MIN_SECONDS + (int) Math.round(this.value * (MAX_SECONDS - MIN_SECONDS));
+            this.selectedSeconds = getSelectedSeconds();
         }
     }
 }
