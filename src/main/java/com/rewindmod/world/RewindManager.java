@@ -42,6 +42,7 @@ public class RewindManager {
     }
 
     private static final int REWIND_SECONDS = 5;
+    public static final int MAX_REWIND_SECONDS = 15;
     public static final int COOLDOWN_SECONDS = 15;
     public static final int COOLDOWN_TICKS = COOLDOWN_SECONDS * 20;
 
@@ -53,6 +54,10 @@ public class RewindManager {
     private final Deque<WorldSnapshot> playbackQueue = new ArrayDeque<>();
     private int playbackTotal = 0;
     private int playbackRemaining = 0;
+
+    // Smooth interpolation state — store previous & current frame for sub-tick lerp
+    private WorldSnapshot prevFrame = null;
+    private WorldSnapshot currentFrame = null;
 
     // ── Tick ──────────────────────────────────────────────────────────────────
 
@@ -80,22 +85,40 @@ public class RewindManager {
     private void tickPlayback(ServerWorld world, MinecraftServer server) {
         if (playbackQueue.isEmpty()) {
             rewinding = false;
+            prevFrame = null;
+            currentFrame = null;
             BlockChangeTracker.getInstance().setReplaying(false);
             RewindMod.LOGGER.info("[RewindMod] Rewind playback finished.");
             return;
         }
 
-        WorldSnapshot frame = playbackQueue.pollLast();
-        BlockChangeTracker.getInstance().setReplaying(true);
-        applyFrame(frame, world, server);
-        playbackRemaining--;
+        // Shift frames: prev = current, current = next from queue
+        prevFrame = currentFrame;
+        currentFrame = playbackQueue.pollLast();
 
+        BlockChangeTracker.getInstance().setReplaying(true);
+
+        // Apply block changes from current frame (instant — blocks can't be lerped)
+        applyBlockChanges(currentFrame, world);
+
+        // Apply player/entity positions with smooth lerp from prevFrame → currentFrame
+        if (prevFrame != null) {
+            applyFrameLerped(prevFrame, currentFrame, world, server);
+        } else {
+            applyFrame(currentFrame, world, server);
+        }
+
+        playbackRemaining--;
         syncCooldownToAll(server);
     }
 
     // ── Request rewind ────────────────────────────────────────────────────────
 
     public boolean requestRewind(ServerPlayerEntity requestingPlayer, MinecraftServer server) {
+        return requestRewindWithDuration(requestingPlayer, server, REWIND_SECONDS);
+    }
+
+    public boolean requestRewindWithDuration(ServerPlayerEntity requestingPlayer, MinecraftServer server, int seconds) {
         UUID uuid = requestingPlayer.getUuid();
 
         if (cooldownMap.containsKey(uuid)) {
@@ -113,7 +136,7 @@ public class RewindManager {
             return false;
         }
 
-        List<WorldSnapshot> frames = snapshotHistory.getLastSeconds(REWIND_SECONDS);
+        List<WorldSnapshot> frames = snapshotHistory.getLastSeconds(seconds);
         if (frames.isEmpty()) {
             requestingPlayer.sendMessage(
                     Text.literal("Tidak cukup histori!").formatted(Formatting.YELLOW), true);
@@ -125,6 +148,8 @@ public class RewindManager {
         playbackTotal = frames.size();
         playbackRemaining = frames.size();
         rewinding = true;
+        prevFrame = null;
+        currentFrame = null;
         BlockChangeTracker.getInstance().setReplaying(true);
 
         ServerWorld world = server.getWorld(World.OVERWORLD);
@@ -142,7 +167,7 @@ public class RewindManager {
 
         server.getPlayerManager().broadcast(
                 Text.literal("⏪ " + requestingPlayer.getName().getString()
-                        + " melakukan REWIND! Dunia mundur " + REWIND_SECONDS + " detik!")
+                        + " melakukan REWIND! Dunia mundur " + seconds + " detik!")
                         .formatted(Formatting.AQUA), false);
 
         snapshotHistory.clear();
@@ -151,7 +176,139 @@ public class RewindManager {
 
     // ── Apply a single frame ──────────────────────────────────────────────────
 
-    private void applyFrame(WorldSnapshot snapshot, ServerWorld world, MinecraftServer server) {
+    /** Extract and apply only block changes from a snapshot. */
+    private void applyBlockChanges(WorldSnapshot snapshot, ServerWorld world) {
+        List<BlockChangeRecord> blockChanges = snapshot.getBlockChanges();
+        for (int i = blockChanges.size() - 1; i >= 0; i--) {
+            BlockChangeRecord rec = blockChanges.get(i);
+            world.setBlockState(rec.pos(), rec.before(), Block_NOTIFY_ALL);
+        }
+        world.setTimeOfDay(snapshot.getWorldTime());
+    }
+
+    /**
+     * Apply frame with linear interpolation from prevSnapshot → nextSnapshot.
+     * This gives smooth sub-tick motion similar to flashback/replay mods.
+     * We use a fixed alpha of 0.5 (midpoint) since we're applying each frame at 1 tick intervals.
+     * The client-side interpolation (partial ticks) handles the visual smoothing.
+     */
+    private void applyFrameLerped(WorldSnapshot from, WorldSnapshot to,
+                                   ServerWorld world, MinecraftServer server) {
+        // Lerp player positions between frames
+        Map<UUID, WorldSnapshot.PlayerSnapshot> fromPlayers = from.getPlayerSnapshots();
+        Map<UUID, WorldSnapshot.PlayerSnapshot> toPlayers = to.getPlayerSnapshots();
+
+        for (ServerPlayerEntity player : new ArrayList<>(world.getPlayers())) {
+            WorldSnapshot.PlayerSnapshot toPSsnap = toPlayers.get(player.getUuid());
+            WorldSnapshot.PlayerSnapshot fromPSnap = fromPlayers.get(player.getUuid());
+
+            if (toPSsnap != null) {
+                if (fromPSnap != null) {
+                    // Smooth lerp: teleport to "to" position but use velocity hint toward it
+                    double lerpX = lerp(fromPSnap.x, toPSsnap.x, 0.6);
+                    double lerpY = lerp(fromPSnap.y, toPSsnap.y, 0.6);
+                    double lerpZ = lerp(fromPSnap.z, toPSsnap.z, 0.6);
+                    float lerpYaw = lerpAngle(fromPSnap.yaw, toPSsnap.yaw, 0.6f);
+                    float lerpPitch = lerpAngle(fromPSnap.pitch, toPSsnap.pitch, 0.6f);
+
+                    // Apply to player with smooth teleport
+                    ServerWorld playerWorld = (ServerWorld) player.getEntityWorld();
+                    player.teleport(playerWorld, lerpX, lerpY, lerpZ, Set.of(), lerpYaw, lerpPitch, false);
+                    player.setBodyYaw(lerpAngle(fromPSnap.bodyYaw, toPSsnap.bodyYaw, 0.6f));
+                    player.setHeadYaw(lerpAngle(fromPSnap.headYaw, toPSsnap.headYaw, 0.6f));
+
+                    // Restore stats/inventory from target frame (not lerped)
+                    restorePlayerStats(player, toPSsnap, playerWorld);
+                } else {
+                    restorePlayer(player, toPSsnap);
+                }
+            }
+        }
+
+        // Restore non-player entities with lerp
+        List<Entity> entityList = new ArrayList<>();
+        for (Entity entity : world.iterateEntities()) {
+            if (entity != null && !(entity instanceof PlayerEntity) && !entity.isRemoved()) {
+                entityList.add(entity);
+            }
+        }
+        Map<UUID, Entity> currentEntities = new HashMap<>();
+        for (Entity entity : entityList) currentEntities.put(entity.getUuid(), entity);
+
+        Map<UUID, WorldSnapshot.EntitySnapshot> fromEntityMap = new HashMap<>();
+        for (WorldSnapshot.EntitySnapshot es : from.getEntitySnapshots()) fromEntityMap.put(es.uuid, es);
+
+        Set<UUID> snapshotUUIDs = new HashSet<>();
+        for (WorldSnapshot.EntitySnapshot toES : to.getEntitySnapshots()) {
+            snapshotUUIDs.add(toES.uuid);
+            WorldSnapshot.EntitySnapshot fromES = fromEntityMap.get(toES.uuid);
+            Entity existing = currentEntities.get(toES.uuid);
+
+            if (existing != null && !existing.isRemoved() && toES.wasAlive) {
+                if (fromES != null && fromES.wasAlive) {
+                    // Smooth lerp entity position
+                    double ex = lerp(fromES.x, toES.x, 0.6);
+                    double ey = lerp(fromES.y, toES.y, 0.6);
+                    double ez = lerp(fromES.z, toES.z, 0.6);
+                    existing.refreshPositionAndAngles(ex, ey, ez,
+                            lerpAngle(fromES.yaw, toES.yaw, 0.6f),
+                            lerpAngle(fromES.pitch, toES.pitch, 0.6f));
+                    existing.setBodyYaw(lerpAngle(fromES.bodyYaw, toES.bodyYaw, 0.6f));
+                    existing.setHeadYaw(lerpAngle(fromES.headYaw, toES.headYaw, 0.6f));
+                } else {
+                    existing.refreshPositionAndAngles(toES.x, toES.y, toES.z, toES.yaw, toES.pitch);
+                }
+                existing.setVelocity(new Vec3d(toES.velX, toES.velY, toES.velZ));
+                existing.velocityDirty = true;
+                existing.setSwimming(toES.isSwimming);
+                existing.setSprinting(toES.isSprinting);
+                existing.setPose(toES.pose);
+                if (existing instanceof LivingEntity living) {
+                    living.setHealth(toES.fullNbt.getFloat("Health", living.getMaxHealth()));
+                }
+            } else if (toES.wasAlive) {
+                if (existing != null) existing.discard();
+                spawnEntityFromSnapshot(toES, world);
+            } else {
+                if (existing != null && !existing.isRemoved()) existing.discard();
+            }
+        }
+
+        for (Entity entity : entityList) {
+            if (entity == null || entity.isRemoved() || entity instanceof PlayerEntity) continue;
+            if (!snapshotUUIDs.contains(entity.getUuid())) entity.discard();
+        }
+    }
+
+    /** Linear interpolation helper */
+    private static double lerp(double a, double b, double t) {
+        return a + (b - a) * t;
+    }
+
+    /** Angle lerp (handles wrap-around at ±180°) */
+    private static float lerpAngle(float a, float b, float t) {
+        float diff = b - a;
+        while (diff < -180f) diff += 360f;
+        while (diff > 180f) diff -= 360f;
+        return a + diff * t;
+    }
+
+    /** Restore only stats/inventory of a player (not position) from a snapshot */
+    private void restorePlayerStats(ServerPlayerEntity player, WorldSnapshot.PlayerSnapshot ps,
+                                    ServerWorld playerWorld) {
+        player.setHealth(ps.health);
+        player.getHungerManager().setFoodLevel(ps.foodLevel);
+        player.getHungerManager().setSaturationLevel(ps.saturation);
+        player.setExperienceLevel(ps.xpLevel);
+        player.setSwimming(ps.isSwimming);
+        player.setSprinting(ps.isSprinting);
+        player.setSneaking(ps.isSneaking);
+        player.setPose(ps.pose);
+        player.setFireTicks(ps.fireTicks);
+        player.setAir(ps.air);
+    }
+
+
 
         // ── 0. World time (day/night cycle) ──────────────────────────────────
         world.setTimeOfDay(snapshot.getWorldTime());

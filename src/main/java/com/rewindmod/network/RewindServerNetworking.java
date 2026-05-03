@@ -14,8 +14,10 @@ import net.minecraft.server.network.ServerPlayerEntity;
 public class RewindServerNetworking {
 
     public static void register() {
-        // C2S: client sends rewind request
+        // C2S: client sends rewind request (legacy, without duration)
         PayloadTypeRegistry.playC2S().register(RewindRequestPayload.ID, RewindRequestPayload.CODEC);
+        // C2S: client sends rewind with chosen duration
+        PayloadTypeRegistry.playC2S().register(RewindRequestDurationPayload.ID, RewindRequestDurationPayload.CODEC);
         // S2C payloads must also be registered on the server side so it can send them
         PayloadTypeRegistry.playS2C().register(CooldownSyncPayload.ID, CooldownSyncPayload.CODEC);
         PayloadTypeRegistry.playS2C().register(RewindStartPayload.ID, RewindStartPayload.CODEC);
@@ -27,6 +29,15 @@ public class RewindServerNetworking {
                         RewindManager.getInstance().requestRewind(player, context.server());
                     });
                 });
+
+        ServerPlayNetworking.registerGlobalReceiver(RewindRequestDurationPayload.ID,
+                (payload, context) -> {
+                    ServerPlayerEntity player = context.player();
+                    int seconds = Math.max(1, Math.min(15, payload.seconds()));
+                    context.server().execute(() -> {
+                        RewindManager.getInstance().requestRewindWithDuration(player, context.server(), seconds);
+                    });
+                });
     }
 
     // ── Payload classes ───────────────────────────────────────────────────────
@@ -36,6 +47,18 @@ public class RewindServerNetworking {
         public static final Id<RewindRequestPayload> ID = new Id<>(RewindPackets.REWIND_REQUEST);
         public static final PacketCodec<PacketByteBuf, RewindRequestPayload> CODEC =
                 PacketCodec.unit(new RewindRequestPayload());
+
+        @Override public Id<? extends CustomPayload> getId() { return ID; }
+    }
+
+    /** C2S: Client requests a rewind with a specific duration in seconds (1–15) */
+    public record RewindRequestDurationPayload(int seconds) implements CustomPayload {
+        public static final Id<RewindRequestDurationPayload> ID = new Id<>(RewindPackets.REWIND_REQUEST_DURATION);
+        public static final PacketCodec<PacketByteBuf, RewindRequestDurationPayload> CODEC =
+                PacketCodec.ofStatic(
+                        (buf, payload) -> buf.writeInt(payload.seconds()),
+                        buf -> new RewindRequestDurationPayload(buf.readInt())
+                );
 
         @Override public Id<? extends CustomPayload> getId() { return ID; }
     }

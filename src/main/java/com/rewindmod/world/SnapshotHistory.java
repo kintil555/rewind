@@ -11,9 +11,9 @@ import java.util.List;
  */
 public class SnapshotHistory {
 
-    public static final int HISTORY_SECONDS = 6;
+    public static final int HISTORY_SECONDS = 16;  // store 16s to allow up to 15s rewind
     public static final int TPS = 20;
-    public static final int MAX_SNAPSHOTS = HISTORY_SECONDS * TPS; // 120 snapshots
+    public static final int MAX_SNAPSHOTS = HISTORY_SECONDS * TPS; // 320 snapshots
 
     private final Deque<WorldSnapshot> snapshots = new ArrayDeque<>();
 

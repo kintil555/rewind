@@ -10,6 +10,9 @@ public class RewindPackets {
     /** Client → Server: player pressed the rewind key */
     public static final Identifier REWIND_REQUEST = Identifier.of("rewindmod", "rewind_request");
 
+    /** Client → Server: player confirmed rewind with a chosen duration (seconds) */
+    public static final Identifier REWIND_REQUEST_DURATION = Identifier.of("rewindmod", "rewind_request_duration");
+
     /** Server → Client: sync cooldown ticks */
     public static final Identifier COOLDOWN_SYNC = Identifier.of("rewindmod", "cooldown_sync");
 

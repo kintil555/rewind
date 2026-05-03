@@ -2,7 +2,6 @@ package com.rewindmod.client;
 
 import com.rewindmod.network.RewindServerNetworking;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
-import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 
 /**
  * Registers client-side packet handlers.
@@ -10,8 +9,9 @@ import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 public class RewindClientNetworking {
 
     public static void register() {
-        // NOTE: C2S (RewindRequestPayload) and S2C payloads are already registered
-        // server-side in RewindServerNetworking.register(). Do NOT re-register here.
+        // NOTE: C2S payloads are registered server-side in RewindServerNetworking.register().
+        // S2C payloads are already registered server-side too.
+        // Client only needs to register RECEIVERS for S2C packets.
 
         // Handle cooldown sync
         ClientPlayNetworking.registerGlobalReceiver(
@@ -38,3 +38,4 @@ public class RewindClientNetworking {
         ClientPlayNetworking.send(new RewindServerNetworking.RewindRequestPayload());
     }
 }
+
