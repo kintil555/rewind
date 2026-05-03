@@ -144,7 +144,7 @@ public class WorldSnapshot {
         public static PlayerSnapshot capture(ServerPlayerEntity player) {
             // Full player NBT — contains Inventory list, ActiveEffects, etc.
             NbtCompound fullNbt = new NbtCompound();
-            player.writeCustomDataToNbt(fullNbt);
+            player.saveSelfNbt(fullNbt);
 
             return new PlayerSnapshot(
                     player.getUuid(), player.getName().getString(),
@@ -199,7 +199,7 @@ public class WorldSnapshot {
             NbtCompound entityNbt = new NbtCompound();
             boolean alive = true;
             try {
-                entity.writeNbt(entityNbt);
+                entity.saveSelfNbt(entityNbt);
             } catch (Exception ignored) {}
 
             if (entity instanceof LivingEntity living) {

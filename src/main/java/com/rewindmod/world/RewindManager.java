@@ -252,13 +252,15 @@ public class RewindManager {
         player.addExperience((int)(ps.xpProgress * player.getNextLevelExperience()));
 
         // ── Full inventory restore from NBT (fixes item-drop ghost bug) ───────
-        // readCustomDataFromNbt includes the "Inventory" list
+        // saveSelfNbt writes the full "Inventory" NbtList into the compound.
+        // We restore it by reading the "Inventory" list directly into the player's inventory.
         try {
-            player.readCustomDataFromNbt(ps.fullPlayerNbt);
+            NbtList inventoryList = ps.fullPlayerNbt.getList("Inventory", NbtCompound.COMPOUND_TYPE);
+            player.getInventory().clear();
+            player.getInventory().readNbt(inventoryList);
         } catch (Exception e) {
-            RewindMod.LOGGER.warn("[RewindMod] Failed to fully restore player NBT for {}: {}",
+            RewindMod.LOGGER.warn("[RewindMod] Failed to restore inventory for {}: {}",
                     player.getName().getString(), e.getMessage());
-            // Fallback: clear inventory so no ghost items remain
             player.getInventory().clear();
         }
 

@@ -27,7 +27,7 @@ public abstract class BlockChangeMixin {
                                               CallbackInfoReturnable<Boolean> cir) {
         World self = (World)(Object)this;
         // Only track server-side, not client-side
-        if (self.isClient) return;
+        if (self.isClient()) return;
         if (BlockChangeTracker.getInstance().isReplaying()) return;
 
         BlockState before = self.getBlockState(pos);
