@@ -71,8 +71,6 @@ public class RewindConfigScreen extends Screen {
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        // ── Draw background dimming ──────────────────────────────────────────
-        this.renderBackground(context, mouseX, mouseY, delta);
 
         int panelW = 240;
         int panelH = 140;
