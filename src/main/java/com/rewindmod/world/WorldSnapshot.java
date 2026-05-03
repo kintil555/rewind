@@ -142,9 +142,12 @@ public class WorldSnapshot {
         }
 
         public static PlayerSnapshot capture(ServerPlayerEntity player) {
-            // Full player NBT — contains Inventory list, ActiveEffects, etc.
+            // Capture inventory directly via PlayerInventory — avoids writeCustomDataToNbt API changes
+            NbtList inventoryNbt = new NbtList();
+            player.getInventory().writeNbt(inventoryNbt);
+            // Store inventory NBT inside a compound for compatibility with readCustomDataFromNbt replacement
             NbtCompound fullNbt = new NbtCompound();
-            player.writeCustomDataToNbt(fullNbt);
+            fullNbt.put("Inventory", inventoryNbt);
 
             return new PlayerSnapshot(
                     player.getUuid(), player.getName().getString(),
@@ -199,7 +202,8 @@ public class WorldSnapshot {
             NbtCompound entityNbt = new NbtCompound();
             boolean alive = true;
             try {
-                entity.saveNbt(entityNbt);
+                // Use saveSelfNbt which writes entity type + data — available in 1.21.x yarn
+                entity.saveSelfNbt(entityNbt);
             } catch (Exception ignored) {}
 
             if (entity instanceof LivingEntity living) {
