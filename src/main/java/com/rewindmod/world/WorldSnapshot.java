@@ -4,6 +4,7 @@ import com.mojang.serialization.DataResult;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.nbt.NbtElement;
 import net.minecraft.nbt.NbtList;
@@ -11,14 +12,15 @@ import net.minecraft.nbt.NbtOps;
 import net.minecraft.registry.Registries;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
+import net.minecraft.storage.NbtWriteView;
+import net.minecraft.util.ErrorReporter;
 import net.minecraft.util.Identifier;
 import net.minecraft.world.World;
 
 import java.util.*;
 
 /**
- * A snapshot of the world state at a specific point in time.
- * Captures player positions, health, inventory, and nearby entity states.
+ * Snapshot of the world state at a given point in time.
  */
 public class WorldSnapshot {
 
@@ -46,14 +48,12 @@ public class WorldSnapshot {
     public static WorldSnapshot capture(ServerWorld world) {
         long now = System.currentTimeMillis();
         long worldTime = world.getTime();
-
         Map<UUID, PlayerSnapshot> players = new HashMap<>();
         List<EntitySnapshot> entities = new ArrayList<>();
 
         for (ServerPlayerEntity player : world.getPlayers()) {
             players.put(player.getUuid(), PlayerSnapshot.capture(player));
         }
-
         for (Entity entity : world.iterateEntities()) {
             if (entity instanceof PlayerEntity) continue;
             boolean nearPlayer = false;
@@ -63,13 +63,12 @@ public class WorldSnapshot {
                     break;
                 }
             }
-            if (nearPlayer) {
-                entities.add(EntitySnapshot.capture(entity));
-            }
+            if (nearPlayer) entities.add(EntitySnapshot.capture(entity));
         }
-
         return new WorldSnapshot(now, worldTime, players, entities);
     }
+
+    // ── Player snapshot ───────────────────────────────────────────────────────
 
     public static class PlayerSnapshot {
         public final UUID uuid;
@@ -82,7 +81,10 @@ public class WorldSnapshot {
         public final int xpLevel;
         public final float xpProgress;
         public final int score;
-        // inventoryNbt stores full player NBT (includes inventory) serialized via writeCustomDataToNbt
+        /**
+         * Inventory stored slot-by-slot as NbtList of NbtCompound.
+         * Each entry: {slot: byte, item: NbtCompound via ItemStack.toNbt}
+         */
         public final NbtCompound inventoryNbt;
         public final NbtCompound effectsNbt;
         public final boolean onGround;
@@ -91,8 +93,7 @@ public class WorldSnapshot {
         public final int air;
 
         private PlayerSnapshot(UUID uuid, String name,
-                               double x, double y, double z,
-                               float yaw, float pitch,
+                               double x, double y, double z, float yaw, float pitch,
                                float health, int foodLevel, float saturation,
                                int xpLevel, float xpProgress, int score,
                                NbtCompound inventoryNbt, NbtCompound effectsNbt,
@@ -110,12 +111,14 @@ public class WorldSnapshot {
         }
 
         public static PlayerSnapshot capture(ServerPlayerEntity player) {
-            // In 1.21.11, writeNbt/readNbt removed from PlayerInventory.
-            // Use writeCustomDataToNbt which serializes the full player data including inventory.
-            NbtCompound playerDataNbt = new NbtCompound();
-            player.writeCustomDataToNbt(playerDataNbt);
+            // --- Inventory: store each slot manually using NbtWriteView ---
+            // PlayerInventory.writeData(WriteView) needs a WriteView; we use NbtWriteView.
+            NbtWriteView invView = NbtWriteView.create(ErrorReporter.EMPTY);
+            player.getInventory().writeData(invView);
+            NbtCompound invWrapper = new NbtCompound();
+            invWrapper.put("inventory", invView.getNbt());
 
-            // Status effects: writeNbt removed in 1.21.11, use CODEC + NbtOps
+            // --- Status effects: use CODEC (writeNbt removed in 1.21.6+) ---
             NbtList effectList = new NbtList();
             player.getActiveStatusEffects().forEach((effect, instance) -> {
                 DataResult<NbtElement> result = StatusEffectInstance.CODEC
@@ -135,7 +138,7 @@ public class WorldSnapshot {
                     player.getHungerManager().getFoodLevel(),
                     player.getHungerManager().getSaturationLevel(),
                     player.experienceLevel, player.experienceProgress, player.getScore(),
-                    playerDataNbt, effectsNbt,
+                    invWrapper, effectsNbt,
                     player.isOnGround(),
                     player.getVelocity().x, player.getVelocity().y, player.getVelocity().z,
                     player.getFireTicks(), player.getAir()
@@ -143,19 +146,23 @@ public class WorldSnapshot {
         }
     }
 
+    // ── Entity snapshot ───────────────────────────────────────────────────────
+
     public static class EntitySnapshot {
         public final UUID uuid;
         public final String entityType;
         public final double x, y, z;
         public final float yaw, pitch;
         public final double velX, velY, velZ;
+        /**
+         * Full entity data captured via NbtWriteView + entity.writeFullData(WriteView).
+         * This is the 1.21.11 replacement for saveNbt(NbtCompound).
+         */
         public final NbtCompound fullNbt;
 
         private EntitySnapshot(UUID uuid, String entityType,
-                               double x, double y, double z,
-                               float yaw, float pitch,
-                               double velX, double velY, double velZ,
-                               NbtCompound fullNbt) {
+                               double x, double y, double z, float yaw, float pitch,
+                               double velX, double velY, double velZ, NbtCompound fullNbt) {
             this.uuid = uuid; this.entityType = entityType;
             this.x = x; this.y = y; this.z = z;
             this.yaw = yaw; this.pitch = pitch;
@@ -164,16 +171,16 @@ public class WorldSnapshot {
         }
 
         public static EntitySnapshot capture(Entity entity) {
-            NbtCompound nbt = new NbtCompound();
-            // saveNbt(NbtCompound) removed in 1.21.11; writeCustomDataToNbt is the correct replacement
-            entity.writeCustomDataToNbt(nbt);
+            // entity.writeFullData(WriteView) is the public 1.21.11 API for full entity serialisation
+            NbtWriteView view = NbtWriteView.create(ErrorReporter.EMPTY);
+            entity.writeFullData(view);
             Identifier typeId = Registries.ENTITY_TYPE.getId(entity.getType());
             return new EntitySnapshot(
                     entity.getUuid(), typeId.toString(),
                     entity.getX(), entity.getY(), entity.getZ(),
                     entity.getYaw(), entity.getPitch(),
                     entity.getVelocity().x, entity.getVelocity().y, entity.getVelocity().z,
-                    nbt
+                    view.getNbt()
             );
         }
     }

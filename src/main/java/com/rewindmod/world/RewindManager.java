@@ -8,7 +8,12 @@ import net.minecraft.entity.SpawnReason;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.nbt.NbtList;
+import net.minecraft.nbt.NbtOps;
+import net.minecraft.item.ItemStack;
+import com.mojang.serialization.DataResult;
 import net.minecraft.registry.Registries;
+import net.minecraft.storage.NbtWriteView;
+import net.minecraft.util.ErrorReporter;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
@@ -214,10 +219,23 @@ public class RewindManager {
         player.setExperienceLevel(ps.xpLevel);
         player.setExperiencePoints(0);
         player.addExperience((int)(ps.xpProgress * player.getNextLevelExperience()));
-        // Inventory - readNbt removed in 1.21.11; readCustomDataFromNbt restores full player data
-        // including inventory (inventoryNbt was captured via writeCustomDataToNbt)
-        player.readCustomDataFromNbt(ps.inventoryNbt);
-        // Remove the NbtReadView lines that no longer apply
+        // Inventory: restore slot-by-slot from the NbtList written by Inventories.writeData().
+        // Since NbtReadView has no public factory, we decode ItemStacks directly from the
+        // "Items" NbtList that Inventories.writeData() writes into the NbtCompound.
+        player.getInventory().clear();
+        NbtCompound invData = ps.inventoryNbt.getCompoundOrEmpty("inventory");
+        NbtList itemsList = invData.getListOrEmpty("Items");
+        for (int i = 0; i < itemsList.size(); i++) {
+            if (itemsList.get(i) instanceof NbtCompound slotNbt) {
+                int slot = slotNbt.getByte("Slot", (byte)0) & 0xFF;
+                DataResult<ItemStack> result = ItemStack.CODEC.parse(NbtOps.INSTANCE, slotNbt);
+                result.result().ifPresent(stack -> {
+                    if (slot < player.getInventory().size()) {
+                        player.getInventory().setStack(slot, stack);
+                    }
+                });
+            }
+        }
         // Velocity
         player.setVelocity(ps.velX, ps.velY, ps.velZ);
         // Fire ticks
@@ -231,21 +249,16 @@ public class RewindManager {
 
     private void spawnEntityFromSnapshot(WorldSnapshot.EntitySnapshot es, ServerWorld world) {
         try {
-            Identifier typeId = Identifier.of(es.entityType);
-            // In 1.21.x, use Registries.ENTITY_TYPE.getOptionalValue or containsId
-            if (!Registries.ENTITY_TYPE.containsId(typeId)) return;
-            EntityType<?> type = Registries.ENTITY_TYPE.get(typeId);
-            if (type == null) return;
-
-            // EntityType.create(World, SpawnReason) is the correct signature in 1.21.x
-            Entity entity = type.create(world, net.minecraft.entity.SpawnReason.LOAD);
-            if (entity == null) return;
-
-            entity.setUuid(es.uuid);
-            // readNbt(NbtCompound) removed in 1.21.11; use readCustomDataFromNbt instead
-            entity.readCustomDataFromNbt(es.fullNbt);
-            entity.refreshPositionAndAngles(es.x, es.y, es.z, es.yaw, es.pitch);
-            world.spawnEntity(entity);
+            // Build a proper entity NBT compound with the "id" key that loadEntityWithPassengers needs
+            NbtCompound nbtWithId = es.fullNbt.copy();
+            nbtWithId.putString("id", es.entityType);
+            // loadEntityWithPassengers handles deserialization from NbtCompound (still valid in 1.21.11)
+            EntityType.loadEntityWithPassengers(nbtWithId, world, SpawnReason.LOAD, loaded -> {
+                loaded.refreshPositionAndAngles(es.x, es.y, es.z, es.yaw, es.pitch);
+                loaded.setUuid(es.uuid);
+                world.spawnEntity(loaded);
+                return loaded;
+            });
         } catch (Exception e) {
             RewindMod.LOGGER.warn("Failed to re-spawn entity {} during rewind: {}", es.uuid, e.getMessage());
         }
