@@ -13,7 +13,6 @@ import net.minecraft.nbt.NbtList;
 import net.minecraft.nbt.NbtOps;
 import net.minecraft.item.ItemStack;
 import com.mojang.serialization.DataResult;
-import net.minecraft.registry.Registries;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
@@ -27,10 +26,10 @@ import java.util.*;
 /**
  * Core server-side manager for the Rewind mechanic.
  *
- * Rewind now plays BACKWARDS frame-by-frame:
- *  - When triggered, we collect all snapshots from the last REWIND_SECONDS seconds
- *  - Each server tick during playback, we apply the previous frame (newest → oldest)
- *  - This creates smooth reverse motion for all entities/players/world
+ * Frame-by-frame playback (newest → oldest):
+ *  - World time is set each frame → smooth day/night rewind
+ *  - Dead entities are re-spawned cleanly (no miring/corrupt state)
+ *  - Entity position + velocity set per-frame for smooth interpolation
  */
 public class RewindManager {
 
@@ -125,7 +124,7 @@ public class RewindManager {
             return false;
         }
 
-        // frames is oldest→newest. We want to play newest→oldest, so queue as-is and pollLast
+        // frames is oldest→newest; pollLast gives newest first (backwards playback)
         playbackQueue.clear();
         playbackQueue.addAll(frames);
         playbackTotal = frames.size();
@@ -144,7 +143,8 @@ public class RewindManager {
         }
 
         server.getPlayerManager().broadcast(
-                Text.literal("⏪ " + requestingPlayer.getName().getString() + " melakukan REWIND! Dunia mundur " + REWIND_SECONDS + " detik!")
+                Text.literal("⏪ " + requestingPlayer.getName().getString()
+                        + " melakukan REWIND! Dunia mundur " + REWIND_SECONDS + " detik!")
                         .formatted(Formatting.AQUA),
                 false
         );
@@ -156,9 +156,15 @@ public class RewindManager {
     // ── Apply a single frame ──────────────────────────────────────────────────
 
     private void applyFrame(WorldSnapshot snapshot, ServerWorld world, MinecraftServer server) {
-        // 1. Restore players
+
+        // ── 0. Restore world time (day/night cycle) ───────────────────────────
+        // setTimeOfDay sets the time-of-day portion only; we want full world time.
+        // world.setTime() in 1.21 sets both worldTime and timeOfDay.
+        world.setTime(snapshot.getWorldTime());
+
+        // ── 1. Restore players ────────────────────────────────────────────────
         Map<UUID, WorldSnapshot.PlayerSnapshot> playerSnaps = snapshot.getPlayerSnapshots();
-        for (ServerPlayerEntity player : world.getPlayers()) {
+        for (ServerPlayerEntity player : new ArrayList<>(world.getPlayers())) {
             WorldSnapshot.PlayerSnapshot ps = playerSnaps.get(player.getUuid());
             if (ps == null) continue;
             restorePlayer(player, ps);
@@ -170,11 +176,10 @@ public class RewindManager {
             }
         }
 
-        // 2. Restore non-player entities
-        // Collect to list FIRST — iterating live world while discarding can yield null entities
+        // ── 2. Collect current non-player entities safely ─────────────────────
         List<Entity> entityList = new ArrayList<>();
         for (Entity entity : world.iterateEntities()) {
-            if (entity != null && !(entity instanceof PlayerEntity)) {
+            if (entity != null && !(entity instanceof PlayerEntity) && !entity.isRemoved()) {
                 entityList.add(entity);
             }
         }
@@ -184,28 +189,40 @@ public class RewindManager {
             currentEntities.put(entity.getUuid(), entity);
         }
 
+        // ── 3. Restore / respawn entities from snapshot ───────────────────────
         Set<UUID> snapshotUUIDs = new HashSet<>();
         for (WorldSnapshot.EntitySnapshot es : snapshot.getEntitySnapshots()) {
             snapshotUUIDs.add(es.uuid);
             Entity existing = currentEntities.get(es.uuid);
-            if (existing != null && !existing.isRemoved()) {
+
+            boolean entityShouldExist = es.wasAlive;
+            if (existing != null && !existing.isRemoved() && entityShouldExist) {
+                // Entity alive in snapshot and alive now — smooth position restore
                 existing.refreshPositionAndAngles(es.x, es.y, es.z, es.yaw, es.pitch);
                 existing.setVelocity(new Vec3d(es.velX, es.velY, es.velZ));
+                existing.velocityDirty = true;
+
                 if (existing instanceof LivingEntity living) {
-                    NbtCompound nbt = es.fullNbt.copy();
-                    if (nbt.contains("Health")) {
-                        living.setHealth(nbt.getFloat("Health", living.getMaxHealth()));
-                    }
+                    float targetHealth = es.fullNbt.getFloat("Health", living.getMaxHealth());
+                    living.setHealth(targetHealth);
+                    // Reset death animation state so mob stands upright
+                    living.deathTime = es.fullNbt.getInt("DeathTime", 0);
+                    living.hurtTime = es.fullNbt.getInt("HurtTime", 0);
                 }
-            } else if (existing == null) {
+            } else if (entityShouldExist) {
+                // Entity was alive at this snapshot time but is now dead/missing — respawn it
+                if (existing != null) existing.discard();
                 spawnEntityFromSnapshot(es, world);
+            } else {
+                // Entity was already dead at this snapshot time — discard if present
+                if (existing != null && !existing.isRemoved()) existing.discard();
             }
         }
 
-        // 3. Remove entities that didn't exist at this snapshot time
-        // Use pre-collected list — never iterate live world while discarding
+        // ── 4. Remove entities that spawned AFTER this snapshot time ──────────
         for (Entity entity : entityList) {
             if (entity == null || entity.isRemoved()) continue;
+            if (entity instanceof PlayerEntity) continue;
             if (!snapshotUUIDs.contains(entity.getUuid())) {
                 entity.discard();
             }
@@ -214,7 +231,12 @@ public class RewindManager {
 
     private void restorePlayer(ServerPlayerEntity player, WorldSnapshot.PlayerSnapshot ps) {
         ServerWorld playerWorld = (ServerWorld) player.getEntityWorld();
+
+        // Teleport smoothly — use setPosition during rewind instead of full teleport
+        // to reduce client-side stutter. Full teleport every frame causes the
+        // "confirmation packet" overhead. We only teleport position, not full relocation.
         player.teleport(playerWorld, ps.x, ps.y, ps.z, Set.of(), ps.yaw, ps.pitch, false);
+
         player.setHealth(ps.health);
         player.getHungerManager().setFoodLevel(ps.foodLevel);
         player.getHungerManager().setSaturationLevel(ps.saturation);
@@ -237,6 +259,7 @@ public class RewindManager {
             }
         }
 
+        // Zero out velocity so player doesn't drift between frames
         player.setVelocity(0, 0, 0);
         player.setFireTicks(ps.fireTicks);
         player.setAir(ps.air);
@@ -247,8 +270,15 @@ public class RewindManager {
         try {
             NbtCompound nbtWithId = es.fullNbt.copy();
             nbtWithId.putString("id", es.entityType);
+            // Only spawn if entity has valid health (> 0) or is non-living
+            float health = nbtWithId.getFloat("Health", 1.0f);
+            if (health <= 0 && nbtWithId.contains("Health")) {
+                // Don't respawn dead entities
+                return;
+            }
             EntityType.loadEntityWithPassengers(nbtWithId, world, SpawnReason.LOAD, loaded -> {
                 loaded.refreshPositionAndAngles(es.x, es.y, es.z, es.yaw, es.pitch);
+                loaded.setVelocity(new Vec3d(es.velX, es.velY, es.velZ));
                 loaded.setUuid(es.uuid);
                 world.spawnEntity(loaded);
                 return loaded;

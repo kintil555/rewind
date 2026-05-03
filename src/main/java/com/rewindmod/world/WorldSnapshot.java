@@ -2,6 +2,7 @@ package com.rewindmod.world;
 
 import com.mojang.serialization.DataResult;
 import net.minecraft.entity.Entity;
+import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.ItemStack;
@@ -57,7 +58,9 @@ public class WorldSnapshot {
             players.put(player.getUuid(), PlayerSnapshot.capture(player));
         }
         for (Entity entity : world.iterateEntities()) {
+            if (entity == null) continue;
             if (entity instanceof PlayerEntity) continue;
+            // Only snapshot entities near a player
             boolean nearPlayer = false;
             for (ServerPlayerEntity player : world.getPlayers()) {
                 if (entity.squaredDistanceTo(player) < SNAPSHOT_RADIUS * SNAPSHOT_RADIUS) {
@@ -83,10 +86,6 @@ public class WorldSnapshot {
         public final int xpLevel;
         public final float xpProgress;
         public final int score;
-        /**
-         * Inventory stored slot-by-slot as NbtList of NbtCompound.
-         * Each entry: {slot: byte, item: NbtCompound via ItemStack.toNbt}
-         */
         public final NbtCompound inventoryNbt;
         public final NbtCompound effectsNbt;
         public final boolean onGround;
@@ -113,15 +112,12 @@ public class WorldSnapshot {
         }
 
         public static PlayerSnapshot capture(ServerPlayerEntity player) {
-            // --- Inventory: store each slot manually using NbtWriteView ---
-            // PlayerInventory.writeData(WriteView.ListAppender<StackWithSlot>) requires a ListAppender.
             NbtWriteView invView = NbtWriteView.create(ErrorReporter.EMPTY);
             WriteView.ListAppender<StackWithSlot> invAppender = invView.getListAppender("inventory", StackWithSlot.CODEC);
             player.getInventory().writeData(invAppender);
             NbtCompound invWrapper = new NbtCompound();
             invWrapper.put("inventory", invView.getNbt());
 
-            // --- Status effects: use CODEC (writeNbt removed in 1.21.6+) ---
             NbtList effectList = new NbtList();
             player.getActiveStatusEffects().forEach((effect, instance) -> {
                 DataResult<NbtElement> result = StatusEffectInstance.CODEC
@@ -157,29 +153,32 @@ public class WorldSnapshot {
         public final double x, y, z;
         public final float yaw, pitch;
         public final double velX, velY, velZ;
-        /**
-         * Full entity data captured via NbtWriteView + entity.writeFullData(WriteView).
-         * This is the 1.21.11 replacement for saveNbt(NbtCompound).
-         */
+        /** health, deathTime, hurtTime stored for accurate state restoration */
         public final NbtCompound fullNbt;
+        /** Whether entity was alive at snapshot time */
+        public final boolean wasAlive;
 
         private EntitySnapshot(UUID uuid, String entityType,
                                double x, double y, double z, float yaw, float pitch,
-                               double velX, double velY, double velZ, NbtCompound fullNbt) {
+                               double velX, double velY, double velZ,
+                               NbtCompound fullNbt, boolean wasAlive) {
             this.uuid = uuid; this.entityType = entityType;
             this.x = x; this.y = y; this.z = z;
             this.yaw = yaw; this.pitch = pitch;
             this.velX = velX; this.velY = velY; this.velZ = velZ;
             this.fullNbt = fullNbt;
+            this.wasAlive = wasAlive;
         }
 
         public static EntitySnapshot capture(Entity entity) {
-            // saveNbt/writeNbt are not accessible in Yarn 1.21.11+build.4 mapping.
-            // Build a minimal NbtCompound manually with the data RewindManager actually uses.
-            // RewindManager only reads: "Health" (for LivingEntity restoration).
             NbtCompound entityNbt = new NbtCompound();
-            if (entity instanceof net.minecraft.entity.LivingEntity living) {
-                entityNbt.putFloat("Health", living.getHealth());
+            boolean alive = true;
+            if (entity instanceof LivingEntity living) {
+                float health = living.getHealth();
+                entityNbt.putFloat("Health", health);
+                entityNbt.putInt("DeathTime", living.deathTime);
+                entityNbt.putInt("HurtTime", living.hurtTime);
+                alive = health > 0 && !living.isDead();
             }
             Identifier typeId = Registries.ENTITY_TYPE.getId(entity.getType());
             return new EntitySnapshot(
@@ -187,7 +186,7 @@ public class WorldSnapshot {
                     entity.getX(), entity.getY(), entity.getZ(),
                     entity.getYaw(), entity.getPitch(),
                     entity.getVelocity().x, entity.getVelocity().y, entity.getVelocity().z,
-                    entityNbt
+                    entityNbt, alive
             );
         }
     }
