@@ -12,6 +12,7 @@ import net.minecraft.entity.SpawnReason;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.nbt.NbtList;
+import net.minecraft.registry.RegistryWrapper;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
@@ -255,8 +256,9 @@ public class RewindManager {
         // inventoryNbt is a NbtList captured via PlayerInventory.writeNbt()
         // Restore via PlayerInventory.readNbt(NbtList) — direct, no compound round-trip
         try {
+            RegistryWrapper.WrapperLookup lookup = player.getServerWorld().getRegistryManager();
             player.getInventory().clear();
-            player.getInventory().readNbt(ps.inventoryNbt);
+            player.getInventory().readNbt(ps.inventoryNbt, lookup);
         } catch (Exception e) {
             RewindMod.LOGGER.warn("[RewindMod] Failed to restore inventory for {}: {}",
                     player.getName().getString(), e.getMessage());

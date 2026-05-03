@@ -11,6 +11,7 @@ import net.minecraft.nbt.NbtElement;
 import net.minecraft.nbt.NbtList;
 import net.minecraft.nbt.NbtOps;
 import net.minecraft.registry.Registries;
+import net.minecraft.registry.RegistryWrapper;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.util.Identifier;
@@ -143,7 +144,8 @@ public class WorldSnapshot {
 
         public static PlayerSnapshot capture(ServerPlayerEntity player) {
             // Capture inventory directly as NbtList — most reliable approach
-            NbtList inventoryNbt = player.getInventory().writeNbt(new NbtList());
+            RegistryWrapper.WrapperLookup lookup = player.getServerWorld().getRegistryManager();
+            NbtList inventoryNbt = player.getInventory().writeNbt(new NbtList(), lookup);
 
             return new PlayerSnapshot(
                     player.getUuid(), player.getName().getString(),
@@ -198,7 +200,7 @@ public class WorldSnapshot {
             NbtCompound entityNbt = new NbtCompound();
             boolean alive = true;
             try {
-                entity.saveNbt(entityNbt); // saveNbt = boolean, populates compound
+                entity.writeNbt(entityNbt); // writeNbt populates compound
             } catch (Exception ignored) {}
 
             if (entity instanceof LivingEntity living) {
