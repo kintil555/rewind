@@ -18,12 +18,15 @@ public class RewindKeyBinding {
 
     public static KeyBinding rewindKey;
 
+    private static final KeyBinding.Category REWIND_CATEGORY =
+            KeyBindingHelper.registerKeyCategory("category.rewindmod");
+
     public static void register() {
         rewindKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
                 "key.rewindmod.rewind",       // translation key
                 InputUtil.Type.KEYSYM,
                 GLFW.GLFW_KEY_COMMA,          // "<" / "," key (rebindable)
-                "category.rewindmod"          // category in controls menu
+                REWIND_CATEGORY               // category in controls menu
         ));
 
         // Poll the keybinding each client tick
