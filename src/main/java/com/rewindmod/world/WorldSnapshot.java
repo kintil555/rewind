@@ -71,7 +71,7 @@ public class WorldSnapshot {
 
         Set<BlockPos> playerPositions = new HashSet<>();
         for (ServerPlayerEntity player : world.getPlayers()) {
-            players.put(player.getUuid(), PlayerSnapshot.capture(player));
+            players.put(player.getUuid(), PlayerSnapshot.capture(player, world));
             playerPositions.add(player.getBlockPos());
         }
 
@@ -142,10 +142,10 @@ public class WorldSnapshot {
             this.isSneaking = isSneaking; this.isCrawling = isCrawling; this.pose = pose;
         }
 
-        public static PlayerSnapshot capture(ServerPlayerEntity player) {
+        public static PlayerSnapshot capture(ServerPlayerEntity player, ServerWorld world) {
             // Serialize inventory slot-by-slot using CODEC — correct API for MC 1.21.11
             net.minecraft.registry.RegistryWrapper.WrapperLookup registries =
-                    player.getServerWorld().getServer().getRegistryManager();
+                    world.getRegistryManager();
             com.mojang.serialization.DynamicOps<net.minecraft.nbt.NbtElement> ops =
                     registries.getOps(net.minecraft.nbt.NbtOps.INSTANCE);
             NbtCompound fullNbt = new NbtCompound();
