@@ -3,7 +3,8 @@
   "package": "com.rewindmod.mixin",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
-    "ServerWorldMixin"
+    "ServerWorldMixin",
+    "BlockChangeMixin"
   ],
   "injectors": {
     "defaultRequire": 1
