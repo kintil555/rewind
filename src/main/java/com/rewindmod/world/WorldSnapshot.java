@@ -68,9 +68,11 @@ public class WorldSnapshot {
         Map<UUID, PlayerSnapshot> players = new HashMap<>();
         List<EntitySnapshot> entities = new ArrayList<>();
 
+        net.minecraft.registry.RegistryWrapper.WrapperLookup registries = world.getRegistryManager();
+
         Set<BlockPos> playerPositions = new HashSet<>();
         for (ServerPlayerEntity player : world.getPlayers()) {
-            players.put(player.getUuid(), PlayerSnapshot.capture(player));
+            players.put(player.getUuid(), PlayerSnapshot.capture(player, registries));
             playerPositions.add(player.getBlockPos());
         }
 
@@ -141,10 +143,10 @@ public class WorldSnapshot {
             this.isSneaking = isSneaking; this.isCrawling = isCrawling; this.pose = pose;
         }
 
-        public static PlayerSnapshot capture(ServerPlayerEntity player) {
+        public static PlayerSnapshot capture(ServerPlayerEntity player, net.minecraft.registry.RegistryWrapper.WrapperLookup registries) {
             // Capture inventory directly via PlayerInventory — avoids writeCustomDataToNbt API changes
             NbtList inventoryNbt = new NbtList();
-            player.getInventory().writeNbt(inventoryNbt);
+            player.getInventory().writeNbt(inventoryNbt, registries);
             // Store inventory NBT inside a compound for compatibility with readCustomDataFromNbt replacement
             NbtCompound fullNbt = new NbtCompound();
             fullNbt.put("Inventory", inventoryNbt);
@@ -202,8 +204,8 @@ public class WorldSnapshot {
             NbtCompound entityNbt = new NbtCompound();
             boolean alive = true;
             try {
-                // Use saveSelfNbt which writes entity type + data — available in 1.21.x yarn
-                entity.saveSelfNbt(entityNbt);
+                // Use writeNbt which writes entity data — available in 1.21.x yarn
+                entity.writeNbt(entityNbt);
             } catch (Exception ignored) {}
 
             if (entity instanceof LivingEntity living) {
