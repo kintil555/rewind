@@ -145,7 +145,7 @@ public class WorldSnapshot {
         public static PlayerSnapshot capture(ServerPlayerEntity player) {
             // Serialize inventory slot-by-slot using CODEC — correct API for MC 1.21.11
             net.minecraft.registry.RegistryWrapper.WrapperLookup registries =
-                    ((net.minecraft.server.world.ServerWorld) player.getWorld()).getServer().getRegistryManager();
+                    player.getServerWorld().getServer().getRegistryManager();
             com.mojang.serialization.DynamicOps<net.minecraft.nbt.NbtElement> ops =
                     registries.getOps(net.minecraft.nbt.NbtOps.INSTANCE);
             NbtCompound fullNbt = new NbtCompound();
