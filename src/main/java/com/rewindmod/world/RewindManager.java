@@ -158,9 +158,10 @@ public class RewindManager {
     private void applyFrame(WorldSnapshot snapshot, ServerWorld world, MinecraftServer server) {
 
         // ── 0. Restore world time (day/night cycle) ───────────────────────────
-        // setTimeOfDay sets the time-of-day portion only; we want full world time.
-        // world.setTime() in 1.21 sets both worldTime and timeOfDay.
-        world.setTime(snapshot.getWorldTime());
+        // In 1.21.1 (Yarn), world.setTime() does not exist.
+        // Only timeOfDay can be modified; raw world time is an internal tick counter.
+        // setTimeOfDay() controls the day/night cycle which is what we want for rewind.
+        world.setTimeOfDay(snapshot.getWorldTime());
 
         // ── 1. Restore players ────────────────────────────────────────────────
         Map<UUID, WorldSnapshot.PlayerSnapshot> playerSnaps = snapshot.getPlayerSnapshots();

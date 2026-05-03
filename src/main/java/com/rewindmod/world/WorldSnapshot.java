@@ -50,7 +50,7 @@ public class WorldSnapshot {
 
     public static WorldSnapshot capture(ServerWorld world) {
         long now = System.currentTimeMillis();
-        long worldTime = world.getTime();
+        long worldTime = world.getTimeOfDay();
         Map<UUID, PlayerSnapshot> players = new HashMap<>();
         List<EntitySnapshot> entities = new ArrayList<>();
 
