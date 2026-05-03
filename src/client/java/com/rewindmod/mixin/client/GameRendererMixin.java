@@ -1,13 +1,14 @@
 package com.rewindmod.mixin.client;
 
+import com.rewindmod.client.RewindEffectRenderer;
 import net.minecraft.client.render.GameRenderer;
 import org.spongepowered.asm.mixin.Mixin;
 
 /**
- * Placeholder mixin for GameRenderer – reserved for future visual effects
- * (e.g. screen flash / blur when a rewind occurs).
+ * Placeholder mixin for GameRenderer.
+ * Visual effects during rewind are applied via HudRenderCallback in RewindEffectRenderer.
  */
 @Mixin(GameRenderer.class)
 public abstract class GameRendererMixin {
-    // Reserved for rewind visual effect (screen rewind flash)
+    // Rewind screen effect is handled in RewindEffectRenderer (via HudRenderCallback)
 }

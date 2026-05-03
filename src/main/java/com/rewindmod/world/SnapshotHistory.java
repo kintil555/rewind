@@ -1,23 +1,22 @@
 package com.rewindmod.world;
 
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Deque;
+import java.util.List;
 
 /**
- * Maintains a rolling history of WorldSnapshots for up to HISTORY_SECONDS seconds.
- * Snapshots are captured at ~20 tps (every tick).
+ * Rolling history of WorldSnapshots captured at ~20 TPS.
+ * Extended to support returning a list of the last N seconds for frame-by-frame playback.
  */
 public class SnapshotHistory {
 
-    public static final int HISTORY_SECONDS = 6; // keep 6s, rewind uses 5s
+    public static final int HISTORY_SECONDS = 6;
     public static final int TPS = 20;
     public static final int MAX_SNAPSHOTS = HISTORY_SECONDS * TPS; // 120 snapshots
 
     private final Deque<WorldSnapshot> snapshots = new ArrayDeque<>();
 
-    /**
-     * Add a new snapshot, dropping the oldest if over capacity.
-     */
     public void add(WorldSnapshot snapshot) {
         snapshots.addLast(snapshot);
         while (snapshots.size() > MAX_SNAPSHOTS) {
@@ -26,34 +25,44 @@ public class SnapshotHistory {
     }
 
     /**
-     * Returns the snapshot that is approximately {@code secondsAgo} seconds in the past,
-     * or the oldest available snapshot if history is shorter.
+     * Returns all snapshots from the last {@code secondsAgo} seconds,
+     * ordered oldest → newest. Used for frame-by-frame playback.
+     */
+    public List<WorldSnapshot> getLastSeconds(int secondsAgo) {
+        if (snapshots.isEmpty()) return new ArrayList<>();
+
+        long cutoff = System.currentTimeMillis() - (secondsAgo * 1000L);
+        List<WorldSnapshot> result = new ArrayList<>();
+
+        for (WorldSnapshot snap : snapshots) {
+            if (snap.getTimestamp() >= cutoff) {
+                result.add(snap);
+            }
+        }
+
+        // If nothing qualifies, return the entire history as a fallback
+        if (result.isEmpty()) {
+            result.addAll(snapshots);
+        }
+
+        return result; // oldest → newest
+    }
+
+    /**
+     * Returns the snapshot approximately {@code secondsAgo} seconds in the past.
      */
     public WorldSnapshot getSnapshotSecondsAgo(int secondsAgo) {
         if (snapshots.isEmpty()) return null;
-
         long targetTime = System.currentTimeMillis() - (secondsAgo * 1000L);
-        WorldSnapshot best = snapshots.peekFirst(); // oldest
-
+        WorldSnapshot best = snapshots.peekFirst();
         for (WorldSnapshot snap : snapshots) {
-            if (snap.getTimestamp() <= targetTime) {
-                best = snap; // keep advancing while we're still before or at target
-            } else {
-                break;
-            }
+            if (snap.getTimestamp() <= targetTime) best = snap;
+            else break;
         }
         return best;
     }
 
-    public boolean isEmpty() {
-        return snapshots.isEmpty();
-    }
-
-    public int size() {
-        return snapshots.size();
-    }
-
-    public void clear() {
-        snapshots.clear();
-    }
+    public boolean isEmpty() { return snapshots.isEmpty(); }
+    public int size() { return snapshots.size(); }
+    public void clear() { snapshots.clear(); }
 }

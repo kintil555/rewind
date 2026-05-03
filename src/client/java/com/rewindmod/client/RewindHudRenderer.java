@@ -4,33 +4,41 @@ import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.render.RenderTickCounter;
+import net.minecraft.item.ItemStack;
+import net.minecraft.item.Items;
 import net.minecraft.text.Text;
 
 /**
- * Renders the Rewind cooldown indicator on the HUD.
+ * Renders the Rewind cooldown indicator in Minecraft style.
  *
- * Shows a small box near the hotbar with:
- *  - Animated fill bar showing cooldown progress
- *  - "REWIND" label
- *  - Remaining seconds when on cooldown
- *  - Green "READY" when available
+ * Design: a single hotbar-style slot (20×20 pixels) sitting to the right
+ * of the hotbar, containing the Clock item icon and a cooldown overlay.
+ * When ready, the slot glows green. When on cooldown, it dims with a
+ * standard Minecraft item-cooldown overlay and shows remaining seconds.
+ *
+ *  ┌────┐
+ *  │ 🕐 │  ← Clock item (Minecraft-style slot)
+ *  │ 8s │  ← cooldown text, or blank when ready
+ *  └────┘
  */
 public class RewindHudRenderer {
 
-    // Position & size of the indicator box
-    private static final int BOX_WIDTH = 60;
-    private static final int BOX_HEIGHT = 18;
-    private static final int MARGIN_BOTTOM = 24; // above hotbar
-    private static final int MARGIN_RIGHT = 5;   // from right edge of hotbar area
+    // Slot dimensions — same as hotbar slot (20×20 with 1px border)
+    private static final int SLOT_SIZE = 20;
+    private static final int MARGIN_FROM_HOTBAR = 4; // pixels gap between hotbar and our slot
+    private static final int HOTBAR_HEIGHT = 22;     // vanilla hotbar height
+
+    // Clock item stack (singleton, just for rendering)
+    private static final ItemStack CLOCK_STACK = new ItemStack(Items.CLOCK);
 
     // Colors
-    private static final int COLOR_BG = 0xAA000000;       // semi-transparent black bg
-    private static final int COLOR_BORDER = 0xFF888888;    // grey border
-    private static final int COLOR_FILL_READY = 0xFF00CC44;    // green when ready
-    private static final int COLOR_FILL_COOLDOWN = 0xFF3399FF;  // blue when cooling down
-    private static final int COLOR_TEXT_READY = 0xFFFFFFFF;
-    private static final int COLOR_TEXT_CD = 0xFFCCCCCC;
-    private static final int COLOR_LABEL = 0xFFAAEEFF;
+    private static final int COLOR_SLOT_BG      = 0xFF8B8B8B; // grey slot background (vanilla hotbar tile color)
+    private static final int COLOR_SLOT_BORDER   = 0xFF373737; // dark border
+    private static final int COLOR_SLOT_HIGHLIGHT= 0xFFFFFFFF; // top-left highlight
+    private static final int COLOR_COOLDOWN_DIM  = 0xAA000000; // cooldown shade overlay
+    private static final int COLOR_READY_GLOW    = 0x4400FF44; // green tint when ready
+    private static final int COLOR_TEXT_CD       = 0xFFFFFFFF;
+    private static final int COLOR_TEXT_READY    = 0xFF55FF55;
 
     public static void register() {
         HudRenderCallback.EVENT.register(RewindHudRenderer::render);
@@ -42,68 +50,71 @@ public class RewindHudRenderer {
         if (client.options.hudHidden) return;
 
         RewindCooldownTracker tracker = RewindCooldownTracker.getInstance();
-        int scaledWidth = context.getScaledWindowWidth();
-        int scaledHeight = context.getScaledWindowHeight();
 
-        // Center the box above the hotbar (hotbar is 182px wide, centered)
-        int hotbarWidth = 182;
-        int hotbarX = (scaledWidth - hotbarWidth) / 2;
-        // Place the rewind box just to the right of the hotbar
-        int boxX = hotbarX + hotbarWidth + MARGIN_RIGHT;
-        int boxY = scaledHeight - MARGIN_BOTTOM - BOX_HEIGHT;
+        int screenW = context.getScaledWindowWidth();
+        int screenH = context.getScaledWindowHeight();
 
-        // If box would go off screen, place left of hotbar
-        if (boxX + BOX_WIDTH > scaledWidth) {
-            boxX = hotbarX - BOX_WIDTH - MARGIN_RIGHT;
+        // Hotbar is 182px wide, centered
+        int hotbarW = 182;
+        int hotbarX = (screenW - hotbarW) / 2;
+        int hotbarY = screenH - HOTBAR_HEIGHT - 2;
+
+        // Place our slot immediately to the right of the hotbar
+        int slotX = hotbarX + hotbarW + MARGIN_FROM_HOTBAR;
+        int slotY = hotbarY + (HOTBAR_HEIGHT - SLOT_SIZE) / 2; // vertically centered with hotbar
+
+        // Clamp to screen
+        if (slotX + SLOT_SIZE > screenW) {
+            slotX = hotbarX - SLOT_SIZE - MARGIN_FROM_HOTBAR;
         }
 
         boolean ready = !tracker.isOnCooldown();
         float progress = tracker.getProgress(); // 0.0 = just triggered, 1.0 = ready
 
-        // Background
-        context.fill(boxX, boxY, boxX + BOX_WIDTH, boxY + BOX_HEIGHT, COLOR_BG);
+        // ── Draw slot background (Minecraft style) ────────────────────────────
 
-        // Border
-        drawBorder(context, boxX, boxY, BOX_WIDTH, BOX_HEIGHT, COLOR_BORDER);
+        // Outer dark border
+        context.fill(slotX, slotY, slotX + SLOT_SIZE, slotY + SLOT_SIZE, COLOR_SLOT_BORDER);
 
-        // Fill bar (cooldown progress)
-        int fillWidth = (int) (progress * (BOX_WIDTH - 2));
-        int fillColor = ready ? COLOR_FILL_READY : COLOR_FILL_COOLDOWN;
-        if (fillWidth > 0) {
-            context.fill(boxX + 1, boxY + 1, boxX + 1 + fillWidth, boxY + BOX_HEIGHT - 1, fillColor);
-        }
+        // Inner grey fill
+        context.fill(slotX + 1, slotY + 1, slotX + SLOT_SIZE - 1, slotY + SLOT_SIZE - 1, COLOR_SLOT_BG);
 
-        // Label: "⏪ REWIND"
-        String label = "\u23ea REWIND";
-        int labelWidth = client.textRenderer.getWidth(label);
-        int labelX = boxX + (BOX_WIDTH - labelWidth) / 2;
-        int labelY = boxY + 2;
-        context.drawTextWithShadow(client.textRenderer, Text.literal(label), labelX, labelY, COLOR_LABEL);
+        // Top-left highlight (1px)
+        context.fill(slotX + 1, slotY + 1, slotX + SLOT_SIZE - 1, slotY + 2, COLOR_SLOT_HIGHLIGHT);
+        context.fill(slotX + 1, slotY + 1, slotX + 2, slotY + SLOT_SIZE - 1, COLOR_SLOT_HIGHLIGHT);
 
-        // Status text
-        String statusText;
-        int statusColor;
-        if (ready) {
-            statusText = "SIAP!";
-            statusColor = COLOR_TEXT_READY;
+        // ── Draw clock item icon ──────────────────────────────────────────────
+        // Item renders at 16×16 within the 20×20 slot, offset by 2px
+        context.drawItem(CLOCK_STACK, slotX + 2, slotY + 2);
+
+        // ── Cooldown overlay (vanilla-style darkening from bottom up) ─────────
+        if (!ready) {
+            // How much is still cooling: 1.0 = full cooldown, 0.0 = done
+            float cooldownFraction = 1.0f - progress;
+            int overlayHeight = (int)(cooldownFraction * (SLOT_SIZE - 2));
+            if (overlayHeight > 0) {
+                // Dark overlay fills from the BOTTOM up, like vanilla cooldown
+                int overlayTop = slotY + 1 + (SLOT_SIZE - 2 - overlayHeight);
+                context.fill(slotX + 1, overlayTop,
+                        slotX + SLOT_SIZE - 1, slotY + SLOT_SIZE - 1,
+                        COLOR_COOLDOWN_DIM);
+            }
         } else {
-            statusText = tracker.getCooldownSeconds() + "s";
-            statusColor = COLOR_TEXT_CD;
+            // Green glow when ready
+            context.fill(slotX + 1, slotY + 1,
+                    slotX + SLOT_SIZE - 1, slotY + SLOT_SIZE - 1,
+                    COLOR_READY_GLOW);
         }
-        int statusWidth = client.textRenderer.getWidth(statusText);
-        int statusX = boxX + (BOX_WIDTH - statusWidth) / 2;
-        int statusY = boxY + BOX_HEIGHT - 9;
-        context.drawTextWithShadow(client.textRenderer, Text.literal(statusText), statusX, statusY, statusColor);
-    }
 
-    private static void drawBorder(DrawContext context, int x, int y, int w, int h, int color) {
-        // top
-        context.fill(x, y, x + w, y + 1, color);
-        // bottom
-        context.fill(x, y + h - 1, x + w, y + h, color);
-        // left
-        context.fill(x, y, x + 1, y + h, color);
-        // right
-        context.fill(x + w - 1, y, x + w, y + h, color);
+        // ── Cooldown seconds label (below slot) ───────────────────────────────
+        if (!ready) {
+            String cdText = tracker.getCooldownSeconds() + "s";
+            int textW = client.textRenderer.getWidth(cdText);
+            int textX = slotX + (SLOT_SIZE - textW) / 2;
+            int textY = slotY + SLOT_SIZE + 1;
+            context.drawTextWithShadow(client.textRenderer,
+                    Text.literal(cdText), textX, textY, COLOR_TEXT_CD);
+        }
+        // When ready: no text needed — the green glow is enough signal
     }
 }

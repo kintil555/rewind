@@ -10,16 +10,14 @@ import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 public class RewindClientNetworking {
 
     public static void register() {
-        // Register S2C payload type (client needs to know how to receive this)
-        PayloadTypeRegistry.playS2C().register(
-                RewindServerNetworking.CooldownSyncPayload.ID,
-                RewindServerNetworking.CooldownSyncPayload.CODEC
+        // S2C payloads are registered server-side in RewindServerNetworking.register()
+        // Here we only register the C2S request payload on client side
+        PayloadTypeRegistry.playC2S().register(
+                RewindServerNetworking.RewindRequestPayload.ID,
+                RewindServerNetworking.RewindRequestPayload.CODEC
         );
 
-        // NOTE: C2S payload (RewindRequestPayload) is already registered server-side
-        // in RewindServerNetworking.register(). Do NOT register it here again.
-
-        // Handle incoming cooldown sync from server
+        // Handle cooldown sync
         ClientPlayNetworking.registerGlobalReceiver(
                 RewindServerNetworking.CooldownSyncPayload.ID,
                 (payload, context) -> {
@@ -28,11 +26,18 @@ public class RewindClientNetworking {
                     });
                 }
         );
+
+        // Handle rewind start — trigger client-side visual effect
+        ClientPlayNetworking.registerGlobalReceiver(
+                RewindServerNetworking.RewindStartPayload.ID,
+                (payload, context) -> {
+                    context.client().execute(() -> {
+                        RewindEffectRenderer.getInstance().startRewind(payload.totalFrames());
+                    });
+                }
+        );
     }
 
-    /**
-     * Sends a rewind request to the server.
-     */
     public static void sendRewindRequest() {
         ClientPlayNetworking.send(new RewindServerNetworking.RewindRequestPayload());
     }
