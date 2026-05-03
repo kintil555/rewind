@@ -10,17 +10,14 @@ import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 public class RewindClientNetworking {
 
     public static void register() {
-        // Register S2C payload type
+        // Register S2C payload type (client needs to know how to receive this)
         PayloadTypeRegistry.playS2C().register(
                 RewindServerNetworking.CooldownSyncPayload.ID,
                 RewindServerNetworking.CooldownSyncPayload.CODEC
         );
 
-        // Register C2S payload type (needed on client too for sending)
-        PayloadTypeRegistry.playC2S().register(
-                RewindServerNetworking.RewindRequestPayload.ID,
-                RewindServerNetworking.RewindRequestPayload.CODEC
-        );
+        // NOTE: C2S payload (RewindRequestPayload) is already registered server-side
+        // in RewindServerNetworking.register(). Do NOT register it here again.
 
         // Handle incoming cooldown sync from server
         ClientPlayNetworking.registerGlobalReceiver(
