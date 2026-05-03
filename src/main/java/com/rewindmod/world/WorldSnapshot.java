@@ -4,7 +4,6 @@ import com.mojang.serialization.DataResult;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.inventory.Inventories;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.nbt.NbtElement;
 import net.minecraft.nbt.NbtList;
@@ -13,7 +12,6 @@ import net.minecraft.registry.Registries;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.util.Identifier;
-import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
 
 import java.util.*;
@@ -24,7 +22,7 @@ import java.util.*;
  */
 public class WorldSnapshot {
 
-    public static final int SNAPSHOT_RADIUS = 128; // radius in blocks to capture entities
+    public static final int SNAPSHOT_RADIUS = 128;
 
     private final long timestamp;
     private final long worldTime;
@@ -40,25 +38,11 @@ public class WorldSnapshot {
         this.entitySnapshots = entitySnapshots;
     }
 
-    public long getTimestamp() {
-        return timestamp;
-    }
+    public long getTimestamp() { return timestamp; }
+    public long getWorldTime() { return worldTime; }
+    public Map<UUID, PlayerSnapshot> getPlayerSnapshots() { return playerSnapshots; }
+    public List<EntitySnapshot> getEntitySnapshots() { return entitySnapshots; }
 
-    public long getWorldTime() {
-        return worldTime;
-    }
-
-    public Map<UUID, PlayerSnapshot> getPlayerSnapshots() {
-        return playerSnapshots;
-    }
-
-    public List<EntitySnapshot> getEntitySnapshots() {
-        return entitySnapshots;
-    }
-
-    /**
-     * Captures the current state of a ServerWorld.
-     */
     public static WorldSnapshot capture(ServerWorld world) {
         long now = System.currentTimeMillis();
         long worldTime = world.getTime();
@@ -70,10 +54,8 @@ public class WorldSnapshot {
             players.put(player.getUuid(), PlayerSnapshot.capture(player));
         }
 
-        // Capture all non-player entities within radius of any player
         for (Entity entity : world.iterateEntities()) {
             if (entity instanceof PlayerEntity) continue;
-            // only capture entities near at least one player
             boolean nearPlayer = false;
             for (ServerPlayerEntity player : world.getPlayers()) {
                 if (entity.squaredDistanceTo(player) < SNAPSHOT_RADIUS * SNAPSHOT_RADIUS) {
@@ -89,10 +71,6 @@ public class WorldSnapshot {
         return new WorldSnapshot(now, worldTime, players, entities);
     }
 
-    // ──────────────────────────────────────────────────────
-    // Inner snapshot types
-    // ──────────────────────────────────────────────────────
-
     public static class PlayerSnapshot {
         public final UUID uuid;
         public final String name;
@@ -104,6 +82,7 @@ public class WorldSnapshot {
         public final int xpLevel;
         public final float xpProgress;
         public final int score;
+        // inventoryNbt stores full player NBT (includes inventory) serialized via writeCustomDataToNbt
         public final NbtCompound inventoryNbt;
         public final NbtCompound effectsNbt;
         public final boolean onGround;
@@ -119,68 +98,54 @@ public class WorldSnapshot {
                                NbtCompound inventoryNbt, NbtCompound effectsNbt,
                                boolean onGround, double velX, double velY, double velZ,
                                int fireTicks, int air) {
-            this.uuid = uuid;
-            this.name = name;
+            this.uuid = uuid; this.name = name;
             this.x = x; this.y = y; this.z = z;
             this.yaw = yaw; this.pitch = pitch;
-            this.health = health;
-            this.foodLevel = foodLevel;
-            this.saturation = saturation;
-            this.xpLevel = xpLevel;
-            this.xpProgress = xpProgress;
-            this.score = score;
-            this.inventoryNbt = inventoryNbt;
-            this.effectsNbt = effectsNbt;
+            this.health = health; this.foodLevel = foodLevel; this.saturation = saturation;
+            this.xpLevel = xpLevel; this.xpProgress = xpProgress; this.score = score;
+            this.inventoryNbt = inventoryNbt; this.effectsNbt = effectsNbt;
             this.onGround = onGround;
             this.velX = velX; this.velY = velY; this.velZ = velZ;
-            this.fireTicks = fireTicks;
-            this.air = air;
+            this.fireTicks = fireTicks; this.air = air;
         }
 
         public static PlayerSnapshot capture(ServerPlayerEntity player) {
-            // Serialize inventory using Inventories helper (writeNbt removed in 1.21.11)
-            NbtCompound invNbt = new NbtCompound();
-            Inventories.writeData(invNbt, player.getInventory().getMainStacks());
-            NbtCompound invWrapper = new NbtCompound();
-            invWrapper.put("inventory", invNbt);
+            // In 1.21.11, writeNbt/readNbt removed from PlayerInventory.
+            // Use writeCustomDataToNbt which serializes the full player data including inventory.
+            NbtCompound playerDataNbt = new NbtCompound();
+            player.writeCustomDataToNbt(playerDataNbt);
 
-            // Serialize status effects using CODEC (writeNbt removed in 1.21.11)
-            NbtCompound effectsNbt = new NbtCompound();
+            // Status effects: writeNbt removed in 1.21.11, use CODEC + NbtOps
             NbtList effectList = new NbtList();
             player.getActiveStatusEffects().forEach((effect, instance) -> {
                 DataResult<NbtElement> result = StatusEffectInstance.CODEC
                         .encodeStart(NbtOps.INSTANCE, instance);
                 result.result().ifPresent(tag -> {
-                    if (tag instanceof NbtCompound effectTag) {
-                        effectList.add(effectTag);
-                    }
+                    if (tag instanceof NbtCompound effectTag) effectList.add(effectTag);
                 });
             });
+            NbtCompound effectsNbt = new NbtCompound();
             effectsNbt.put("effects", effectList);
 
             return new PlayerSnapshot(
-                    player.getUuid(),
-                    player.getName().getString(),
+                    player.getUuid(), player.getName().getString(),
                     player.getX(), player.getY(), player.getZ(),
                     player.getYaw(), player.getPitch(),
                     player.getHealth(),
                     player.getHungerManager().getFoodLevel(),
                     player.getHungerManager().getSaturationLevel(),
-                    player.experienceLevel,
-                    player.experienceProgress,
-                    player.getScore(),
-                    invWrapper, effectsNbt,
+                    player.experienceLevel, player.experienceProgress, player.getScore(),
+                    playerDataNbt, effectsNbt,
                     player.isOnGround(),
                     player.getVelocity().x, player.getVelocity().y, player.getVelocity().z,
-                    player.getFireTicks(),
-                    player.getAir()
+                    player.getFireTicks(), player.getAir()
             );
         }
     }
 
     public static class EntitySnapshot {
         public final UUID uuid;
-        public final String entityType; // entity type ID string
+        public final String entityType;
         public final double x, y, z;
         public final float yaw, pitch;
         public final double velX, velY, velZ;
@@ -191,8 +156,7 @@ public class WorldSnapshot {
                                float yaw, float pitch,
                                double velX, double velY, double velZ,
                                NbtCompound fullNbt) {
-            this.uuid = uuid;
-            this.entityType = entityType;
+            this.uuid = uuid; this.entityType = entityType;
             this.x = x; this.y = y; this.z = z;
             this.yaw = yaw; this.pitch = pitch;
             this.velX = velX; this.velY = velY; this.velZ = velZ;
@@ -201,13 +165,11 @@ public class WorldSnapshot {
 
         public static EntitySnapshot capture(Entity entity) {
             NbtCompound nbt = new NbtCompound();
-            // saveNbt writes entity data to the compound; needs RegistryWrapper in 1.21.11
-            entity.saveNbt(nbt);
-            // Use registry to get proper entity type ID
+            // saveNbt(NbtCompound) removed in 1.21.11; writeCustomDataToNbt is the correct replacement
+            entity.writeCustomDataToNbt(nbt);
             Identifier typeId = Registries.ENTITY_TYPE.getId(entity.getType());
             return new EntitySnapshot(
-                    entity.getUuid(),
-                    typeId.toString(),
+                    entity.getUuid(), typeId.toString(),
                     entity.getX(), entity.getY(), entity.getZ(),
                     entity.getYaw(), entity.getPitch(),
                     entity.getVelocity().x, entity.getVelocity().y, entity.getVelocity().z,

@@ -8,7 +8,6 @@ import net.minecraft.entity.SpawnReason;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.nbt.NbtList;
-import net.minecraft.inventory.Inventories;
 import net.minecraft.registry.Registries;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
@@ -215,9 +214,10 @@ public class RewindManager {
         player.setExperienceLevel(ps.xpLevel);
         player.setExperiencePoints(0);
         player.addExperience((int)(ps.xpProgress * player.getNextLevelExperience()));
-        // Inventory - readNbt removed in 1.21.11, use Inventories.readData instead
-        NbtCompound invData = ps.inventoryNbt.getCompoundOrEmpty("inventory");
-        Inventories.readData(invData, player.getInventory().getMainStacks());
+        // Inventory - readNbt removed in 1.21.11; readCustomDataFromNbt restores full player data
+        // including inventory (inventoryNbt was captured via writeCustomDataToNbt)
+        player.readCustomDataFromNbt(ps.inventoryNbt);
+        // Remove the NbtReadView lines that no longer apply
         // Velocity
         player.setVelocity(ps.velX, ps.velY, ps.velZ);
         // Fire ticks
@@ -242,7 +242,8 @@ public class RewindManager {
             if (entity == null) return;
 
             entity.setUuid(es.uuid);
-            entity.readNbt(es.fullNbt);
+            // readNbt(NbtCompound) removed in 1.21.11; use readCustomDataFromNbt instead
+            entity.readCustomDataFromNbt(es.fullNbt);
             entity.refreshPositionAndAngles(es.x, es.y, es.z, es.yaw, es.pitch);
             world.spawnEntity(entity);
         } catch (Exception e) {
