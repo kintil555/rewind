@@ -258,7 +258,7 @@ public class RewindManager {
             // getList returns empty NbtList if key missing — safe in all versions
             net.minecraft.nbt.NbtList inventoryNbt = (net.minecraft.nbt.NbtList) ps.fullPlayerNbt.get("Inventory");
             if (inventoryNbt != null && !inventoryNbt.isEmpty()) {
-                player.getInventory().readNbt(inventoryNbt, playerWorld.getRegistryManager());
+                player.getInventory().readNbt(inventoryNbt);
             }
         } catch (Exception e) {
             RewindMod.LOGGER.warn("[RewindMod] Failed to restore inventory for {}: {}",
