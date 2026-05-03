@@ -45,10 +45,10 @@ public class RewindConfigScreen extends Screen {
                 centerX - 110, sliderY, 220, 20,
                 selectedSeconds
         );
-        this.addRenderableWidget(slider);
+        this.addDrawableChild(slider);
 
         // Confirm button
-        this.addRenderableWidget(ButtonWidget.builder(
+        this.addDrawableChild(ButtonWidget.builder(
                 Text.literal("✔ Rewind!").formatted(Formatting.GREEN),
                 btn -> {
                     if (!RewindCooldownTracker.getInstance().isOnCooldown()) {
@@ -62,7 +62,7 @@ public class RewindConfigScreen extends Screen {
                 .build());
 
         // Cancel button
-        this.addRenderableWidget(ButtonWidget.builder(
+        this.addDrawableChild(ButtonWidget.builder(
                 Text.literal("✖ Batal").formatted(Formatting.RED),
                 btn -> this.close())
                 .dimensions(centerX + 5, buttonY, 105, 20)
