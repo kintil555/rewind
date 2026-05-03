@@ -171,18 +171,24 @@ public class RewindManager {
         }
 
         // 2. Restore non-player entities
-        Map<UUID, Entity> currentEntities = new HashMap<>();
+        // Collect to list FIRST — iterating live world while discarding can yield null entities
+        List<Entity> entityList = new ArrayList<>();
         for (Entity entity : world.iterateEntities()) {
-            if (!(entity instanceof PlayerEntity)) {
-                currentEntities.put(entity.getUuid(), entity);
+            if (entity != null && !(entity instanceof PlayerEntity)) {
+                entityList.add(entity);
             }
+        }
+
+        Map<UUID, Entity> currentEntities = new HashMap<>();
+        for (Entity entity : entityList) {
+            currentEntities.put(entity.getUuid(), entity);
         }
 
         Set<UUID> snapshotUUIDs = new HashSet<>();
         for (WorldSnapshot.EntitySnapshot es : snapshot.getEntitySnapshots()) {
             snapshotUUIDs.add(es.uuid);
             Entity existing = currentEntities.get(es.uuid);
-            if (existing != null) {
+            if (existing != null && !existing.isRemoved()) {
                 existing.refreshPositionAndAngles(es.x, es.y, es.z, es.yaw, es.pitch);
                 existing.setVelocity(new Vec3d(es.velX, es.velY, es.velZ));
                 if (existing instanceof LivingEntity living) {
@@ -191,14 +197,15 @@ public class RewindManager {
                         living.setHealth(nbt.getFloat("Health", living.getMaxHealth()));
                     }
                 }
-            } else {
+            } else if (existing == null) {
                 spawnEntityFromSnapshot(es, world);
             }
         }
 
         // 3. Remove entities that didn't exist at this snapshot time
-        for (Entity entity : world.iterateEntities()) {
-            if (entity instanceof PlayerEntity) continue;
+        // Use pre-collected list — never iterate live world while discarding
+        for (Entity entity : entityList) {
+            if (entity == null || entity.isRemoved()) continue;
             if (!snapshotUUIDs.contains(entity.getUuid())) {
                 entity.discard();
             }
