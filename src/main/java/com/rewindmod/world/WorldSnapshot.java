@@ -11,7 +11,6 @@ import net.minecraft.nbt.NbtElement;
 import net.minecraft.nbt.NbtList;
 import net.minecraft.nbt.NbtOps;
 import net.minecraft.registry.Registries;
-import net.minecraft.registry.RegistryWrapper;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.util.Identifier;
@@ -104,8 +103,8 @@ public class WorldSnapshot {
         public final int xpLevel;
         public final float xpProgress;
         public final int score;
-        // Inventory stored as NbtList for direct restore (fixes item-drop ghost bug)
-        public final NbtList inventoryNbt;
+        // Full NBT — includes inventory, effects, etc. (replaces old per-field approach)
+        public final NbtCompound fullPlayerNbt;
         public final boolean onGround;
         public final double velX, velY, velZ;
         public final int fireTicks;
@@ -122,7 +121,7 @@ public class WorldSnapshot {
                                float yaw, float pitch, float bodyYaw, float headYaw,
                                float health, int foodLevel, float saturation,
                                int xpLevel, float xpProgress, int score,
-                               NbtList inventoryNbt,
+                               NbtCompound fullPlayerNbt,
                                boolean onGround,
                                double velX, double velY, double velZ,
                                int fireTicks, int air,
@@ -134,7 +133,7 @@ public class WorldSnapshot {
             this.bodyYaw = bodyYaw; this.headYaw = headYaw;
             this.health = health; this.foodLevel = foodLevel; this.saturation = saturation;
             this.xpLevel = xpLevel; this.xpProgress = xpProgress; this.score = score;
-            this.inventoryNbt = inventoryNbt;
+            this.fullPlayerNbt = fullPlayerNbt;
             this.onGround = onGround;
             this.velX = velX; this.velY = velY; this.velZ = velZ;
             this.fireTicks = fireTicks; this.air = air;
@@ -143,9 +142,9 @@ public class WorldSnapshot {
         }
 
         public static PlayerSnapshot capture(ServerPlayerEntity player) {
-            // Capture inventory directly as NbtList — most reliable approach
-            RegistryWrapper.WrapperLookup lookup = player.getServerWorld().getRegistryManager();
-            NbtList inventoryNbt = player.getInventory().writeNbt(new NbtList(), lookup);
+            // Full player NBT — contains Inventory list, ActiveEffects, etc.
+            NbtCompound fullNbt = new NbtCompound();
+            player.writeCustomDataToNbt(fullNbt);
 
             return new PlayerSnapshot(
                     player.getUuid(), player.getName().getString(),
@@ -156,7 +155,7 @@ public class WorldSnapshot {
                     player.getHungerManager().getFoodLevel(),
                     player.getHungerManager().getSaturationLevel(),
                     player.experienceLevel, player.experienceProgress, player.getScore(),
-                    inventoryNbt,
+                    fullNbt,
                     player.isOnGround(),
                     player.getVelocity().x, player.getVelocity().y, player.getVelocity().z,
                     player.getFireTicks(), player.getAir(),
@@ -200,7 +199,7 @@ public class WorldSnapshot {
             NbtCompound entityNbt = new NbtCompound();
             boolean alive = true;
             try {
-                entity.writeNbt(entityNbt); // writeNbt populates compound
+                entity.saveNbt(entityNbt);
             } catch (Exception ignored) {}
 
             if (entity instanceof LivingEntity living) {

@@ -12,7 +12,6 @@ import net.minecraft.entity.SpawnReason;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.nbt.NbtList;
-import net.minecraft.registry.RegistryWrapper;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
@@ -253,15 +252,13 @@ public class RewindManager {
         player.addExperience((int)(ps.xpProgress * player.getNextLevelExperience()));
 
         // ── Full inventory restore from NBT (fixes item-drop ghost bug) ───────
-        // inventoryNbt is a NbtList captured via PlayerInventory.writeNbt()
-        // Restore via PlayerInventory.readNbt(NbtList) — direct, no compound round-trip
+        // readCustomDataFromNbt includes the "Inventory" list
         try {
-            RegistryWrapper.WrapperLookup lookup = player.getServerWorld().getRegistryManager();
-            player.getInventory().clear();
-            player.getInventory().readNbt(ps.inventoryNbt, lookup);
+            player.readCustomDataFromNbt(ps.fullPlayerNbt);
         } catch (Exception e) {
-            RewindMod.LOGGER.warn("[RewindMod] Failed to restore inventory for {}: {}",
+            RewindMod.LOGGER.warn("[RewindMod] Failed to fully restore player NBT for {}: {}",
                     player.getName().getString(), e.getMessage());
+            // Fallback: clear inventory so no ghost items remain
             player.getInventory().clear();
         }
 
