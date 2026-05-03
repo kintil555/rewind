@@ -308,7 +308,7 @@ public class RewindManager {
         player.setAir(ps.air);
     }
 
-
+    private void applyFrame(WorldSnapshot snapshot, ServerWorld world, MinecraftServer server) {
 
         // ── 0. World time (day/night cycle) ──────────────────────────────────
         world.setTimeOfDay(snapshot.getWorldTime());
