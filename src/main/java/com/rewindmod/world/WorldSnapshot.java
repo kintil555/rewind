@@ -143,19 +143,21 @@ public class WorldSnapshot {
         }
 
         public static PlayerSnapshot capture(ServerPlayerEntity player) {
-            // Serialize inventory slot-by-slot using ItemStack.toNbt — works in all 1.21.x versions
+            // Serialize inventory slot-by-slot using CODEC — correct API for MC 1.21.11
             net.minecraft.registry.RegistryWrapper.WrapperLookup registries =
-                    player.server.getRegistryManager();
+                    ((net.minecraft.server.world.ServerWorld) player.getWorld()).getServer().getRegistryManager();
+            com.mojang.serialization.DynamicOps<net.minecraft.nbt.NbtElement> ops =
+                    registries.getOps(net.minecraft.nbt.NbtOps.INSTANCE);
             NbtCompound fullNbt = new NbtCompound();
             NbtList inventoryNbt = new NbtList();
             try {
-                net.minecraft.item.ItemStack[] slots = new net.minecraft.item.ItemStack[player.getInventory().size()];
                 for (int i = 0; i < player.getInventory().size(); i++) {
                     net.minecraft.item.ItemStack stack = player.getInventory().getStack(i);
                     if (!stack.isEmpty()) {
                         NbtCompound slotNbt = new NbtCompound();
                         slotNbt.putInt("Slot", i);
-                        slotNbt.put("Item", stack.toNbt(registries));
+                        net.minecraft.item.ItemStack.CODEC.encodeStart(ops, stack)
+                                .result().ifPresent(encoded -> slotNbt.put("Item", encoded));
                         inventoryNbt.add(slotNbt);
                     }
                 }

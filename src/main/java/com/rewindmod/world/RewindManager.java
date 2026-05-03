@@ -255,15 +255,19 @@ public class RewindManager {
         try {
             player.getInventory().clear();
             net.minecraft.registry.RegistryWrapper.WrapperLookup registries =
-                    player.server.getRegistryManager();
+                    playerWorld.getServer().getRegistryManager();
+            com.mojang.serialization.DynamicOps<net.minecraft.nbt.NbtElement> ops =
+                    registries.getOps(net.minecraft.nbt.NbtOps.INSTANCE);
             NbtList inventoryNbt = (NbtList) ps.fullPlayerNbt.get("Inventory");
             if (inventoryNbt != null) {
                 for (net.minecraft.nbt.NbtElement elem : inventoryNbt) {
                     net.minecraft.nbt.NbtCompound slotNbt = (net.minecraft.nbt.NbtCompound) elem;
-                    int slot = slotNbt.getInt("Slot");
-                    net.minecraft.nbt.NbtCompound itemNbt = slotNbt.getCompound("Item");
-                    net.minecraft.item.ItemStack.fromNbt(registries, itemNbt)
-                            .ifPresent(stack -> player.getInventory().setStack(slot, stack));
+                    int slot = slotNbt.getInt("Slot", 0);
+                    net.minecraft.nbt.NbtElement itemElem = slotNbt.get("Item");
+                    if (itemElem != null) {
+                        net.minecraft.item.ItemStack.CODEC.parse(ops, itemElem)
+                                .result().ifPresent(stack -> player.getInventory().setStack(slot, stack));
+                    }
                 }
             }
         } catch (Exception e) {
