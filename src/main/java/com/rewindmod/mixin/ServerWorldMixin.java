@@ -10,6 +10,8 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
+import java.util.function.BooleanSupplier;
+
 /**
  * Hooks into ServerWorld#tick to capture snapshots every game tick.
  */
@@ -19,7 +21,7 @@ public abstract class ServerWorldMixin {
     @Shadow @Final private MinecraftServer server;
 
     @Inject(method = "tick", at = @At("TAIL"))
-    private void rewindmod$onTick(net.minecraft.util.profiler.Profiler profiler, CallbackInfo ci) {
+    private void rewindmod$onTick(BooleanSupplier shouldKeepTicking, CallbackInfo ci) {
         RewindManager.getInstance().onServerTick(server);
     }
 }
